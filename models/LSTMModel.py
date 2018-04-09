@@ -14,6 +14,7 @@ class LSTMModel(object):
 	def __init__(self, config = None, scope_name=None, device='gpu'):
 		self.config = config
 		self.scope = scope_name or "LSTMModel"
+		self.refresh = 0
 
 		self.create_placeholders()
 		self.global_step = \
@@ -82,18 +83,7 @@ class LSTMModel(object):
 
 		rnn_initial_state = cells.zero_state(batch_size, dtype=tf.float32)
 		
-		state = rnn_initial_state
-		with tf.variable_scope("lstm", initializer=rand_uni_initializer):
-			outputs = []
-			for time_step in range(max_time_steps):
-				if time_step > 0:
-					tf.get_variable_scope().reuse_variables()
-				cell_output,hs = cells(processed_inputs[:,time_step,:], state)
-				outputs.append(cell_output)
-				import pdb
-				pdb.set_trace()
-
-
+		outputs,_ = tf.nn.dynamic_rnn(cells,processed_inputs,initial_state=rnn_initial_state,dtype=tf.float32)
 		
 		full_conn_layers = [tf.reshape(tf.concat(axis=1, values=outputs), [-1, num_hidden_units])]
 		with tf.variable_scope("output_layer"):
@@ -104,6 +94,8 @@ class LSTMModel(object):
 					weights_initializer=rand_uni_initializer,
 					biases_initializer=rand_uni_initializer,
 					trainable=True)
+		import pdb
+		pdb.set_trace()
 
 	def compute_loss_and_metrics(self):
 		self.metric["entropy_loss"] = tf.divide(tf.nn.l2_loss(self.model_outputs - self.targets),tf.reduce_sum(self.mask))
