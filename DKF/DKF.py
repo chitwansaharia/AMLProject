@@ -7,6 +7,18 @@ import numpy as np
 import tensorflow as tf
 import pdb
 
+batch_size = 20
+max_time_steps = 12
+num_hidden_layers = 3
+x_size = 1000
+u_size = 1000
+
+z_size = 100
+
+n_samples_term_1 = 1000
+
+z_distr_params_size = z_size + z_size * z_size
+x_distr_params_size = x_size + x_size * x_size
 
 
 class DKF(object):
@@ -35,12 +47,91 @@ class DKF(object):
 		# max_time_steps = self.config.max_time_steps
 		# input_size = self.config.input_size
 
-		batch_size = 20
-		max_time_steps = 12
-		input_size = 100
-		# input_data placeholders
+		# get input dimensions
+
+		# batch size x time steps x input feature
+		self.x = tf.placeholder(dtype=tf.float32, shape=(batch_size, max_time_steps, x_size))
+		# batch size x time steps x input action
+		self.u = tf.placeholder(dtype=tf.float32, shape=(batch_size, max_time_steps, u_size))
+
+	def recognition_model(x, u):
+
+		def rnn_cell():
+			return tf.contrib.rnn.DropoutWrapper(
+				tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden_units),
+				output_keep_prob=self.keep_prob,
+				variational_recurrent=True,
+				dtype=tf.float32)
+
+		# batch size x time steps x (input + action)
+		processed_inputs = tf.concat([x, u] axis=2)
+
+		cells = tf.contrib.rnn.MultiRNNCell([rnn_cell() for _ in range(num_hidden_layers)])
+		rnn_initial_state = cells.zero_state(batch_size, dtype=tf.float32)
+		
+		state = rnn_initial_state
+		with tf.variable_scope("recognition_model/recur", initializer=rand_uni_initializer):
+			outputs = []
+			for time_step in range(max_time_steps):
+				if time_step > 0:
+					tf.get_variable_scope().reuse_variables()
+				cell_output,hs = cells(processed_inputs[:,time_step,:], state)
+				outputs.append(cell_output)
+
+		# batch size x time steps x output dim
+		outputs=np.concat(outputs, axis=0)
+
+		with tf.variable_scope("recognition_model/feed"):
+			w = tf.get_variable("weight", shape=(x_size + u_size, z_distr_params_size))
+			b = tf.get_variable("bias", shape=(z_distr_params_size))
+
+		out = tf.matmul( outputs, w ) + b
+		return out
+
+	def custom_gaussian_sampler(param):
+
+		mean = param[,,:z_size]
+		covariance = tf.exp(tf.reshape(param[,,z_size:], shape=(batch_size, max_time_steps, z_size, z_size)))
+
+		ds = tf.contrib.distributions
+
+		mvg = ds.MultivariateNormalFullCovariance(
+				loc=mean,
+				covariance_matrix=covariance
+			)
+
+		samples = mvg.sample(sample_shape=(n_samples_term_1))
+		return samples
+
+	def transition_model(z, u):
 		pass
 
+	def generation_model(z):
+
+		# check order of sample, z_size
+		z1 = tf.transpose(z, perm=(0, 1, 3, 2))
+
+		with tf.variable_scope("generation_model/feed"):
+			w = tf.get_variable("weight", shape=(z_size, x_distr_params_size))
+			b = tf.get_variable("bias", shape=(x_distr_params_size))
+
+		out = tf.matmul(z, w) + b
+		return out
+
+	def pdf_value_multivariate(param, arg):
+
+		mean = param[,,,:x_size]
+		covariance = tf.exp(tf.reshape(param[,,,x_size:], shape=(batch_size, max_time_steps, None, x_size, x_size)))
+
+		ds = tf.contrib.distributions
+
+		mvg = ds.MultivariateNormalFullCovariance(
+				loc=mean,
+				covariance_matrix=covariance
+			)
+
+		values = mvg.prob(arg)
+		return values
 
 	def build_model(self):
 		# config = self.config
@@ -49,44 +140,23 @@ class DKF(object):
 		# input_size = config.input_size
 		# num_hidden_layers = config.num_hidden_layers
 
-		batch_size = 20
-		num_hidden_units = 100
-		input_size = 100
-		num_hidden_layers = 13
-		max_time_steps = 12
-
-
-		rand_uni_initializer = \
-			tf.random_uniform_initializer(
-				-1, 1)
-
 		processed_inputs = self.inputs
-
-		recog = recognition()
-		trans = transition()
-		gen = generation()
 
 		z1_prior = mean, sigma
 		z_transition = mean, sigma
 
+		# batch size x time steps x z_distr_params_size ((mean, log of variance))
+		z_param = self.recognition_model(x, u)
 
-		# batch size x time steps x input feature
-		x = tf.placeholder()
-		# batch size x time steps x input action
-		u = tf.placeholder()
+		# batch size x time steps x N samples x z_size
+		samples_z = custom_gaussian_sampler( z_param )
 
-		# batch size x time steps x 2 (mean, log of variance)
-		z_param = recog(x, u)
-
-		# batch size x time steps x N samples for first term
-		samples_z = sampler( z_param )
-
-		# batch size x time steps x N x 2 (mean, log of variance)
-		x_param = gen( samples_z )
+		# batch size x time steps x N x x_distr_params_size (mean, log of variance)
+		x_param = self.generation_model( samples_z )
 
 		# error term 1 
 		# batch size x time steps x N
-		out1 = log( gaussian ( x_param, x ) )
+		out1 = tf.log( pdf_value_multivariate ( x_param, x ) )
 
 		# batch size 
 		error_term1 = reduce_sum( out1, axes=[1, 2] )
@@ -125,8 +195,8 @@ class DKF(object):
 
 		self.metrics["grad_sum"] = tf.add_n([tf.reduce_sum(g) for g in grads])
 
-		optimizer = tf.train.AdamOptimizer(learning_rate = self.config.learning_rate)
-		self.train_op = optimizer.apply_gradients(
+		optimizer = tf.train.AdamOptimizer(learning_rate=self.config.learning_rate)
+		self.train_op=optimizer.apply_gradients(
 			zip(grads, tvars),
 			global_step=self.global_step)
 
@@ -194,3 +264,6 @@ class DKF(object):
 
 		epoch_metrics["loss"] = round(np.exp(total_loss / total_words), 3)
 		return epoch_metrics
+
+if __name__ == "__main__":
+	
