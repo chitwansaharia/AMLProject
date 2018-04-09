@@ -105,3 +105,6 @@ ENV/
 
 # Pytest Cache
 .pytest_cache/
+
+# data directory files
+data/*.csv
