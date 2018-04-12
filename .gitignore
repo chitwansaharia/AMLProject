@@ -21,6 +21,8 @@ parts/
 sdist/
 var/
 wheels/
+
+
 *.egg-info/
 .installed.cfg
 *.egg
@@ -108,3 +110,6 @@ ENV/
 
 # data directory files
 data/*.csv
+data/datasets/
+data/*.txt
+data/*.pyc
