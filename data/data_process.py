@@ -29,6 +29,9 @@ data['CompetitionOpenSinceMonth'].fillna(0,inplace=True)
 min_year = data['CompetitionOpenSinceYear'].min()
 data['CompetitionOpenSinceYear'].fillna(min_year-1,inplace=True)
 data['CompetitionOpenSinceYear'] = data['CompetitionOpenSinceYear']-min_year+1
+data['CompetitionOpenSinceYear'] = (data['CompetitionOpenSinceYear']-data['CompetitionOpenSinceYear'].mean())/data['CompetitionOpenSinceYear'].std()
+
+
 
 data['Promo2SinceWeek'].fillna(0,inplace=True)
 data['Promo2SinceWeek'] = (data['Promo2SinceWeek']-data['Promo2SinceWeek'].mean())/data['Promo2SinceWeek'].std()
@@ -74,9 +77,10 @@ for index in range(len(data)):
 	list_item = []
 	list_item.append(data_item['Store'])
 	list_item.append(int(data_item['StoreType']))
+	list_item.append(int(data_item['Assortment']))
 	list_item.append(data_item['CompetitionDistance'])
 	list_item.append(int(data_item["CompetitionOpenSinceMonth"]))
-	list_item.append(int(data_item["CompetitionOpenSinceYear"]))
+	list_item.append(data_item["CompetitionOpenSinceYear"])
 	list_item.append(int(data_item["Promo2"]))
 	list_item.append(data_item['Promo2SinceWeek'])
 	list_item.append(int(data_item["Promo2SinceYear"]))
