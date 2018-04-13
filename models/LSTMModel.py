@@ -96,7 +96,7 @@ class LSTMModel(object):
 			self.day_embedding = tf.get_variable("day_embedding",[31,100])
 			self.open_embedding = tf.get_variable("open_embedding",[2,30])
 			self.promo_embedding = tf.get_variable("promo_embedding",[2,30])
-			self.state_holiday_embedding = tf.get_variable("state_holiday_embedding",[2,30])
+			self.state_holiday_embedding = tf.get_variable("state_holiday_embedding",[4,30])
 			self.school_holiday_embedding = tf.get_variable("school_holiday_embedding",[2,30])
 
 
@@ -115,7 +115,6 @@ class LSTMModel(object):
 
 		
 		outputs,state = tf.nn.dynamic_rnn(cells,processed_inputs,initial_state=rnn_initial_state,dtype=tf.float32)
-		pdb.set_trace()
 		self.metrics["final_state"] = state
 
 		full_conn_layers = [tf.reshape(tf.concat(axis=1, values=outputs), [-1, lstm_units])]
@@ -156,7 +155,7 @@ class LSTMModel(object):
 		epoch_metrics = {}
 		keep_prob = self.config.keep_prob
 		fetches = {
-			"loss": self.metrics["entropy_loss"],
+			"entropy_loss": self.metrics["entropy_loss"],
 			"grad_sum": self.metrics["grad_sum"],
 			"final_state": self.metrics["final_state"]
 		}
@@ -181,7 +180,6 @@ class LSTMModel(object):
 
 
 		i = 0
-		print("Reading till the Batch Number")
 		batch = reader.next()
 		while batch != None:        
 			feed_dict = {}
@@ -203,6 +201,7 @@ class LSTMModel(object):
 
 
 			total_loss += vals["entropy_loss"]
+
 			grad_sum += vals["grad_sum"]
 
 			i += 1
@@ -213,4 +212,6 @@ class LSTMModel(object):
 					"loss :", round((total_loss), 3), \
 					"Gradient :", round(vals["grad_sum"],3))
 			batch = reader.next()
+
+		return total_loss
 

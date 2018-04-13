@@ -36,6 +36,8 @@ def base_model_config():
     config.learning_rate = 0.01
     config.keep_prob = 0.7
     config.batch_size = 20
+    config.load_mode = "fresh"
+    config.patience = 3
     return config
 
 
