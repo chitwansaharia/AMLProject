@@ -128,7 +128,9 @@ class LSTMModel(object):
 					trainable=True)
 
 	def compute_loss_and_metrics(self):
+		self.model_outputs = tf.multiply(self.model_outputs,tf.reshape(self.mask,[-1]))
 		self.metrics["entropy_loss"] = tf.divide(tf.nn.l2_loss(self.model_outputs - tf.reshape(self.targets,[-1,2])),tf.reduce_sum(self.mask))
+
 
 	def compute_gradients_and_train_op(self):
 		tvars = self.tvars = my_lib.get_scope_var(self.scope)
@@ -209,7 +211,7 @@ class LSTMModel(object):
 			if verbose:
 				print(
 					"% Iter Done :", round(i, 0),
-					"loss :", round((total_loss), 3), \
+					"Loss :", round(vals["entropy_loss"],3),
 					"Gradient :", round(vals["grad_sum"],3))
 			batch = reader.next()
 
