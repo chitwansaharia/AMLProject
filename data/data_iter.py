@@ -66,6 +66,7 @@ class SSFetcher(threading.Thread):
 					batch['mask'] = mask
 					refresh = 0
 					diter.queue.put(batch)
+			diter.queue.put(None)
 
 		else:
 			np.random.shuffle(diter.short_stores)
@@ -117,6 +118,9 @@ class SSFetcher(threading.Thread):
 				
 				if len(present_batch) < diter.batch_size:
 					long_list_bool = True
+					if len(present_batch) == 0:
+						batch_set = False
+
 
 				while batch_set:
 					X_batch = np.zeros((diter.batch_size,diter.max_time_steps,diter.config.input_size),dtype=np.float32)
@@ -133,7 +137,7 @@ class SSFetcher(threading.Thread):
 								batch_set = False
 								refresh = 1
 								break
-							if time_steps_done + t_index == discontinue_index + 1:
+							if time_steps_done + t_index == discontinue_index - 1:
 								refresh = 1
 								break	
 					time_steps_done += t_index+1
@@ -240,5 +244,4 @@ class SSIterator(object):
 		batch = self.queue.get()
 		if not batch:
 			self.exit_flag = True
-			# print("Okay")
 		return batch

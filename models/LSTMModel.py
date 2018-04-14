@@ -128,7 +128,7 @@ class LSTMModel(object):
 					trainable=True)
 
 	def compute_loss_and_metrics(self):
-		self.model_outputs = tf.multiply(self.model_outputs,tf.reshape(self.mask,[-1]))
+		self.model_outputs = tf.multiply(self.model_outputs,tf.expand_dims(tf.reshape(self.mask,[-1]),-1))
 		self.metrics["entropy_loss"] = tf.divide(tf.nn.l2_loss(self.model_outputs - tf.reshape(self.targets,[-1,2])),tf.reduce_sum(self.mask))
 
 
@@ -176,10 +176,10 @@ class LSTMModel(object):
 		state = session.run(self.initial_state)
 
 
-		i, total_loss, grad_sum = 0, 0.0, 0.0
+		i, total_loss, grad_sum, data_processed = 0, 0.0, 0.0, 0.0
 
 		reader.start()
-
+		total_data_points = 916859
 
 		i = 0
 		batch = reader.next()
@@ -206,13 +206,18 @@ class LSTMModel(object):
 
 			grad_sum += vals["grad_sum"]
 
+			data_processed += np.sum(batch["mask"])
+
+
+
 			i += 1
 			
 			if verbose:
 				print(
-					"% Iter Done :", round(i, 0),
+					"% Iter Done :", round(data_processed*100/total_data_points, 1),
 					"Loss :", round(vals["entropy_loss"],3),
 					"Gradient :", round(vals["grad_sum"],3))
+
 			batch = reader.next()
 
 		return total_loss

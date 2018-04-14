@@ -21,6 +21,7 @@ parts/
 sdist/
 var/
 wheels/
+SAVE*/
 
 
 *.egg-info/

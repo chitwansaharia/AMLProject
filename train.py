@@ -62,7 +62,7 @@ def main(_):
 
                 valid_loss = model.run_epoch(session, reader = iterator_valid, verbose=True)
 
-                if best_valid_metric > valid_loss:
+                if valid_loss < best_valid_metric:
                     best_valid_metric = valid_loss
 
                     print("\nsaving best model...")
