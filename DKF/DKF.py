@@ -18,6 +18,7 @@ num_hidden_layers = 3
 z_size = 100
 
 n_samples_term_1 = 1000
+n_samples_term_3 = 1000
 
 keep_prob = 0.5
 
@@ -60,6 +61,9 @@ class DKF(object):
 
 	def recognition_model(self, x, u):
 
+		batch_len = int(x.shape[0])
+		time_len = int(x.shape[1])
+
 		def rnn_cell():
 			return tf.contrib.rnn.DropoutWrapper(
 				tf.contrib.rnn.BasicLSTMCell(num_units=num_hidden_units),
@@ -72,7 +76,7 @@ class DKF(object):
 		processed_inputs = tf.concat([x, u], axis=2)
 
 		cells = tf.contrib.rnn.MultiRNNCell([rnn_cell() for _ in range(num_hidden_layers)])
-		rnn_initial_state = cells.zero_state(batch_size, dtype=tf.float32)
+		rnn_initial_state = cells.zero_state(batch_len, dtype=tf.float32)
 		
 		state = rnn_initial_state
 		with tf.variable_scope("recognition_model/recur"):
@@ -93,16 +97,16 @@ class DKF(object):
 			b = tf.get_variable("bias", shape=(z_distr_params_size))
 
 		out = tf.matmul( outputs_r, w ) + b
-		out = tf.reshape(out, shape=(batch_size, max_time_steps, -1))
+		out = tf.reshape(out, shape=(-1, time_len, z_distr_params_size))
 
 		mean = out[:,:,:z_size]
-		cov1 = tf.reshape(out[:,:,z_size:], shape=(batch_size, max_time_steps, z_size, z_size))
+		cov1 = tf.reshape(out[:,:,z_size:], shape=(-1, time_len, z_size, z_size))
 		cov2 = tf.transpose(cov1, perm=(0, 1, 3, 2))
 		covariance = cov1 + cov2
 
 		return mean, covariance
 
-	def custom_gaussian_sampler(self, mean, covariance):
+	def custom_gaussian_sampler(self, mean, covariance, n_samples):
 
 		ds = tf.contrib.distributions
 
@@ -111,25 +115,22 @@ class DKF(object):
 				covariance_matrix=covariance
 			)
 
-		samples = mvg.sample(sample_shape=(n_samples_term_1))
-		samples = tf.transpose(samples, perm=(1, 2, 0, 3))
+		samples = mvg.sample(sample_shape=(n_samples))
+		samples = tf.transpose(samples, perm=(1, 0, 2))
 
 		return samples
 
 	def generation_model(self, z):
 
-		z_r = tf.reshape(z, [-1, z_size])
-
 		with tf.variable_scope("generation_model/feed"):
 			w = tf.get_variable("weight", shape=(z_size, x_distr_params_size))
 			b = tf.get_variable("bias", shape=(x_distr_params_size))
 
-		out = tf.matmul(z_r, w) + b
-		out = tf.reshape(out, [batch_size, max_time_steps, -1, x_distr_params_size])
+		out = tf.matmul(z, w) + b
 
-		mean = out[:,:,:,:x_size]
-		cov1 = tf.reshape(out[:,:,:,x_size:], shape=(batch_size, max_time_steps, -1, x_size, x_size))
-		cov2 = tf.transpose(cov1, perm=(0, 1, 2, 4, 3))
+		mean = out[:,:x_size]
+		cov1 = tf.reshape(out[:,:,:,x_size:], shape=(-1, x_size, x_size))
+		cov2 = tf.transpose(cov1, perm=(0, 2, 1))
 		covariance = cov1 + cov2
 
 		return mean, covariance
@@ -143,7 +144,7 @@ class DKF(object):
 				covariance_matrix=covariance
 			)
 
-		arg_r = tf.reshape(arg, shape=(batch_size, max_time_steps, 1, -1))
+		arg_r = tf.reshape(arg, shape=(-1, 1, x_size))
 
 		values = mvg.prob(arg_r)
 
@@ -164,8 +165,8 @@ class DKF(object):
 		diverg = tf.distributions.kl_divergence(mvg1, mvg2)
 		return diverg
 
-	def custom_kl(self, mean1, covar1, mean2, covar2):
-		# mean2 and covar2 need broadcasting
+	def custom_kl_e2(self, mean1, covar1, mean2, covar2, batch_size):
+		# mean2 and covar2 need broadcasting to batch_size
 		mean1 = tf.reshape(mean1, shape=(-1, z_size))
 		covar1 = tf.reshape(covar1, shape=(-1, z_size, z_size))
 
@@ -175,42 +176,40 @@ class DKF(object):
 		return DKF.kl(mean1, covar1, mean2, covar2)
 
 	def transition_model(self, z, u):
-		# batch_size x time x samples x (z, u)
-		# broadcast u
+		# batch_size x (z, u)
 
-		time_len, samples_no = z.shape[1:3]
-		time_len, samples_no = int(time_len), int(samples_no)
-		
-		u_b = u + tf.zeros( shape=(batch_size, time_len, samples_no, u_size) )
-		
-		processed_inputs = tf.concat([z, u_b], axis=3)
+		in1 = tf.concat([z, u], axis=1)
 
 		with tf.variable_scope("transition_model/layer1"):
 			w = tf.get_variable("weight", shape=(z_size + u_size, z_distr_params_size))
 			b = tf.get_variable("bias", shape=(z_distr_params_size))
 
-		in1 = tf.reshape(processed_inputs, shape=(-1, z_size + u_size))
 		out1 = tf.matmul(in1, w) + b
 
-		out = tf.reshape(out1, shape=(batch_size, time_len, samples_no, z_distr_params_size))	
-
-		mean = out[:,:,:,:z_size]
-		cov1 = tf.reshape(out[:,:,:,z_size:], shape=(batch_size, time_len, samples_no, z_size, z_size))
-		cov2 = tf.transpose(cov1, perm=(0, 1, 2, 4, 3))
+		mean = out[:,:z_size]
+		cov1 = tf.reshape(out[:,z_size:], shape=(-1, z_size, z_size))
+		cov2 = tf.transpose(cov1, perm=(0, 2, 1))
 		covariance = cov1 + cov2
 
 		return mean, covariance
 
-	def custom_kl2(self, mean1, covar1, mean2, covar2):
+	def custom_kl_e3(self, mean1, covar1, mean2, covar2, n_samples, batch_len, time_len):
+		# batch size x time steps-1 x samples = kl of batch size x time steps -1 x z_distr_size and batch size * time steps -1 * N x z_distr_size
+
 		# broadcast mean1, covar1 to samples
+		mean1 = tf.reshape( mean1, shape=(-1, 1, z_size) ) + tf.zeros( shape=(batch_len * time_len, n_samples, z_size) )
+		covar1 = tf.reshape( covar1, shape=(-1, 1, z_size, z_size) ) + tf.zeros( shape=(batch_len * time_len, n_samples, z_size, z_size) )
+		# and reshape
+		mean1 = tf.reshape( mean1, shape=(-1, z_size) )
+		covar1 = tf.reshape( covar1, shape=(-1, z_size, z_size) )
 
-		time_len, samples_no = mean2.shape[1:3]
-		time_len, samples_no = int(time_len), int(samples_no)
+		mean2 = tf.reshape( mean2, shape=(-1, z_size) )
+		covar2 = tf.reshape( covar2, shape=(-1, z_size, z_size) )
 
-		mean1 = tf.reshape(mean1, shape=(batch_size, time_len, 1, z_size)) + tf.zeros( shape=(batch_size, time_len, samples_no, z_size) )
-		covar1 = tf.reshape(covar1, shape=(batch_size, time_len, 1, z_size, z_size)) + tf.zeros( shape=(batch_size, time_len, samples_no, z_size, z_size) )
+		# batch_len x time len x samples
+		prob_values = tf.reshape(DKF.kl(mean1, covar1, mean2, covar2), shape=(batch_len, time_len, n_samples))
 
-		return DKF.kl(mean1, covar1, mean2, covar2)
+		return prob_values
 
 	def build_model(self):
 		# config = self.config
@@ -228,21 +227,30 @@ class DKF(object):
 		# batch size x time steps x z_distr_params_size ((mean, log of variance))
 		z_param_mean, z_param_covar = self.recognition_model(self.x, self.u)
 
-		# batch size x time steps x N samples x z_size
-		samples_z = self.custom_gaussian_sampler( z_param_mean, z_param_covar )
+		# reshaping into batch size * timesteps x z_distr_params_size for generality
+		z_param_mean_shaped = tf.reshape( z_param_mean, shape=(-1, z_size) )
+		z_param_covar_shaped = tf.reshape( z_param_covar, shape=(-1, z_size * z_size) )
+		# batch size * time steps x N samples x z_size
+		samples_z = self.custom_gaussian_sampler( z_param_mean_shaped, z_param_covar_shaped, n_samples_term_1)
+		# shaping samples into batch size * time steps * N x z_size
+		samples_z_shaped = tf.reshape( samples_z, shape=(-1, z_size) )
 
-		# batch size x time steps x N x x_distr_params_size (mean, log of variance)
-		x_param_mean, x_param_covar = self.generation_model( samples_z )
+		# batch size * time steps * N x x_distr_params_size (mean, log of variance)
+		x_param_mean, x_param_covar = self.generation_model( samples_z_shaped )
 
-
-		# x_param = batch size x time steps x N x x_distr_params_size
-		# self.x = batch size x time steps x x_size
+		# x_param = batch size * time steps * N x x_distr_params_size
+		# shaped_x_param_e1 = batch size * time steps x N x x_size
+		shaped_x_param_mean_e1 = tf.reshape( x_param_mean, shape=(-1, n_samples_term_1, x_size) )
+		shaped_x_param_covar_e1 = tf.reshape( x_param_covar, shape=(-1, n_samples_term_1, x_size * x_size) )
+		# shaped_x_e1 = batch size * time steps x x_size
+		shaped_x_e1 = tf.reshape( self.x, shape=(-1, x_size) )
 		# error term 1 
-		# batch size x time steps x N
-		out1 = tf.log( self.pdf_value_multivariate ( x_param_mean, x_param_covar, self.x ) )
+		# batch size * time steps x N
+		out1 = tf.log( self.pdf_value_multivariate ( shaped_x_param_mean, shaped_x_param_covar, shaped_x_e1 ) )
 
+		expectation_out1 = tf.reduce_mean(out1, axis=[1])
 		# batch size 
-		error_term1 = tf.reduce_sum(tf.reduce_mean(out1, axis=[2]), axis=[1])
+		error_term1 = tf.reduce_sum(tf.reshape( expectation_out1, shape=(-1, max_time_steps) ), axis=[1])
 
 		# batch size x 1 (t = 0) x 2 (mean, log variance)
 		z_param_mean_0, z_param_covar_0 = z_param_mean[:,0,:], z_param_covar[:,0,:]
@@ -251,28 +259,79 @@ class DKF(object):
 		# batch size x time steps-1 (t = 0:max-1) x 2 (mean, log variance)
 		z_param_mean_0_t_1, z_param_covar_0_t_1 = z_param_mean[:,:-1,:], z_param_covar[:,:-1,:]
 
-
 		# batch size
-		error_term2 = self.custom_kl( z_param_mean_0, z_param_covar_0, z1_prior_mean, z1_prior_covar )
+		error_term2 = self.custom_kl_e2( z_param_mean_0, z_param_covar_0, z1_prior_mean, z1_prior_covar, batch_size)
 
 
-		# batch size x time steps-1 x N x z_size
-		samples_z1 = self.custom_gaussian_sampler( z_param_mean_0_t_1, z_param_covar_0_t_1 )
-		actions_0_t_1_br = tf.reshape(self.u[:, :-1, :], shape=(batch_size, -1, 1, u_size))
+		# reshaping into batch size * timesteps-1 x z_distr_params_size for generality
+		z_param_mean_0_t_1_shaped = tf.reshape( z_param_mean_0_t_1, shape=(-1, z_size) )
+		z_param_covar_0_t_1_shaped = tf.reshape( z_param_covar_0_t_1, shape=(-1, z_size * z_size) )
+		# batch size * time steps-1 x N x z_size
+		samples_z1 = self.custom_gaussian_sampler( z_param_mean_0_t_1_shaped, z_param_covar_0_t_1_shaped, n_samples_term_3)
+		actions_0_t_1 = tf.reshape(self.u[:, :-1, :], shape=(-1, 1, u_size))
+		# broadcast_actions matrix
+		actions_0_t_1_broadcasted = actions_0_t_1 + tf.zeros( shape=( batch_size*(max_time_steps-1), n_samples_term_3, u_size) )
+
+		# reshaped for generality
+		actions_0_t_1_broadcasted_shaped = tf.reshape( actions_0_t_1_broadcasted, shape=(-1, u_size) )
+		samples_z1_shaped = tf.reshape( samples_z1, shape=(-1, z_size) )
+
+		# batch size * time steps -1 * N x ( mean, covar )
+		z_param_trans_mean, z_param_trans_covar = self.transition_model( samples_z1, actions_0_t_1_br )
 
 		pdb.set_trace()
 
-		# batch size x time steps -1 x N x ( mean, covar )
-		z_param_trans_mean, z_param_trans_covar = self.transition_model( samples_z1, actions_0_t_1_br )
+		# batch size x time steps-1 x samples = kl of batch size x time steps -1 x z_distr_size and batch size * time steps -1 * N x z_distr_size
+		kl_samples_e3 = self.custom_kl_e3( z_param_mean_1_t, z_param_covar_1_t, z_param_trans_mean, z_param_trans_covar, n_samples_term_3, batch_size, max_time_steps-1 )
 
-		# batch size x time steps -1 x N
-		out_e3 = self.custom_kl2( z_param_mean_1_t, z_param_covar_1_t, z_param_trans_mean, z_param_trans_covar )
+		out_e3 = tf.reduce_mean( kl_samples_e3, axis=[2] )
 
-		# TODO
-		# batch size
-		error_term3 = tf.reduce_sum( tf.reduce_mean( out_e3, axis=[2] ), axis=[1] )
+		# batch size 
+		error_term3 = tf.reduce_sum( out_e3, axis=[1] )
 
-		self.loss = error_term1 - error_term2 - error_term3
+		self.loss = tf.reduce_mean(error_term1 - error_term2 - error_term3)
+
+	def acquire_initial_latent_variable(self, x, u):
+
+		# as input
+		# batch size x time_steps x x_size
+		# batch size x time_steps x u_size
+		# batch size x time_steps x mean, var
+
+		distr_z_mean, distr_z_covar = self.recognition_model(self, x, u)
+
+		# consider last output and reshape
+		distr_z_mean, distr_z_covar = tf.reshape(distr_z_mean[:,-1,:], shape=(-1, z_size)), tf.reshape(distr_z_covar[:,-1,:,:], shape=(-1, z_size, z_size))
+
+		# batch size x z_size reshaped
+		return tf.reshape(self.custom_gaussian_sampler( distr_z_mean, distr_z_covar, 1), shape=(-1, z_size))
+
+	def predict_x(self, z, u):
+		# batch size x z_size
+		# batch size x time_len x u_size
+
+		time_len = int(u.shape[1])
+
+		curr_z = z
+
+		x = []
+		for i in range(time_len):
+			# transition
+			curr_u = tf.reshape( u[:,i,:], shape=(-1, u_size) )
+			mean_l, covar_l = self.transition_model( curr_z, curr_u )
+
+			# sample
+			curr_z = tf.reshape( self.custom_gaussian_sampler(mean_l, covar_l, 1), shape=(-1, z_size) )
+
+			# generate distr
+			mean_x, covar_x = self.generation_model( curr_z )
+
+			# sample x
+			x_t = tf.reshape( self.custom_gaussian_sampler(mean_x, covar_x, 1), shape=(-1, x_size) )
+
+			x.append( x_t )
+
+		return x
 
 	def compute_loss_and_metrics(self):
 		pass
