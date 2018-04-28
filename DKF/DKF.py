@@ -9,16 +9,18 @@ import pdb
 
 batch_size = 20
 max_time_steps = 12
-x_size = 1000
-u_size = 1000
+learning_rate = 0.4
+
+x_size = 10
+u_size = 10
 
 num_hidden_units = x_size + u_size
 num_hidden_layers = 3
 
 z_size = 100
 
-n_samples_term_1 = 1000
-n_samples_term_3 = 1000
+n_samples_term_1 = 100
+n_samples_term_3 = 100
 
 keep_prob = 0.5
 
@@ -44,7 +46,6 @@ class DKF(object):
 
 		with tf.variable_scope(self.scope):
 			self.build_model()
-			self.compute_loss_and_metrics()
 			self.compute_gradients_and_train_op()
 
 	def create_placeholders(self):
@@ -129,7 +130,7 @@ class DKF(object):
 		out = tf.matmul(z, w) + b
 
 		mean = out[:,:x_size]
-		cov1 = tf.reshape(out[:,:,:,x_size:], shape=(-1, x_size, x_size))
+		cov1 = tf.reshape(out[:,x_size:], shape=(-1, x_size, x_size))
 		cov2 = tf.transpose(cov1, perm=(0, 2, 1))
 		covariance = cov1 + cov2
 
@@ -184,7 +185,7 @@ class DKF(object):
 			w = tf.get_variable("weight", shape=(z_size + u_size, z_distr_params_size))
 			b = tf.get_variable("bias", shape=(z_distr_params_size))
 
-		out1 = tf.matmul(in1, w) + b
+		out = tf.matmul(in1, w) + b
 
 		mean = out[:,:z_size]
 		cov1 = tf.reshape(out[:,z_size:], shape=(-1, z_size, z_size))
@@ -229,7 +230,7 @@ class DKF(object):
 
 		# reshaping into batch size * timesteps x z_distr_params_size for generality
 		z_param_mean_shaped = tf.reshape( z_param_mean, shape=(-1, z_size) )
-		z_param_covar_shaped = tf.reshape( z_param_covar, shape=(-1, z_size * z_size) )
+		z_param_covar_shaped = tf.reshape( z_param_covar, shape=(-1, z_size, z_size) )
 		# batch size * time steps x N samples x z_size
 		samples_z = self.custom_gaussian_sampler( z_param_mean_shaped, z_param_covar_shaped, n_samples_term_1)
 		# shaping samples into batch size * time steps * N x z_size
@@ -241,12 +242,12 @@ class DKF(object):
 		# x_param = batch size * time steps * N x x_distr_params_size
 		# shaped_x_param_e1 = batch size * time steps x N x x_size
 		shaped_x_param_mean_e1 = tf.reshape( x_param_mean, shape=(-1, n_samples_term_1, x_size) )
-		shaped_x_param_covar_e1 = tf.reshape( x_param_covar, shape=(-1, n_samples_term_1, x_size * x_size) )
+		shaped_x_param_covar_e1 = tf.reshape( x_param_covar, shape=(-1, n_samples_term_1, x_size, x_size) )
 		# shaped_x_e1 = batch size * time steps x x_size
 		shaped_x_e1 = tf.reshape( self.x, shape=(-1, x_size) )
 		# error term 1 
 		# batch size * time steps x N
-		out1 = tf.log( self.pdf_value_multivariate ( shaped_x_param_mean, shaped_x_param_covar, shaped_x_e1 ) )
+		out1 = tf.log( self.pdf_value_multivariate ( shaped_x_param_mean_e1, shaped_x_param_covar_e1, shaped_x_e1 ) )
 
 		expectation_out1 = tf.reduce_mean(out1, axis=[1])
 		# batch size 
@@ -265,7 +266,7 @@ class DKF(object):
 
 		# reshaping into batch size * timesteps-1 x z_distr_params_size for generality
 		z_param_mean_0_t_1_shaped = tf.reshape( z_param_mean_0_t_1, shape=(-1, z_size) )
-		z_param_covar_0_t_1_shaped = tf.reshape( z_param_covar_0_t_1, shape=(-1, z_size * z_size) )
+		z_param_covar_0_t_1_shaped = tf.reshape( z_param_covar_0_t_1, shape=(-1, z_size, z_size) )
 		# batch size * time steps-1 x N x z_size
 		samples_z1 = self.custom_gaussian_sampler( z_param_mean_0_t_1_shaped, z_param_covar_0_t_1_shaped, n_samples_term_3)
 		actions_0_t_1 = tf.reshape(self.u[:, :-1, :], shape=(-1, 1, u_size))
@@ -277,9 +278,7 @@ class DKF(object):
 		samples_z1_shaped = tf.reshape( samples_z1, shape=(-1, z_size) )
 
 		# batch size * time steps -1 * N x ( mean, covar )
-		z_param_trans_mean, z_param_trans_covar = self.transition_model( samples_z1, actions_0_t_1_br )
-
-		pdb.set_trace()
+		z_param_trans_mean, z_param_trans_covar = self.transition_model( samples_z1_shaped, actions_0_t_1_broadcasted_shaped )
 
 		# batch size x time steps-1 x samples = kl of batch size x time steps -1 x z_distr_size and batch size * time steps -1 * N x z_distr_size
 		kl_samples_e3 = self.custom_kl_e3( z_param_mean_1_t, z_param_covar_1_t, z_param_trans_mean, z_param_trans_covar, n_samples_term_3, batch_size, max_time_steps-1 )
@@ -289,9 +288,9 @@ class DKF(object):
 		# batch size 
 		error_term3 = tf.reduce_sum( out_e3, axis=[1] )
 
-		self.loss = tf.reduce_mean(error_term1 - error_term2 - error_term3)
+		self.metrics["cost"] = tf.reduce_mean(error_term1 - error_term2 - error_term3)
 
-	def acquire_initial_latent_variable(self, x, u):
+	def acquire_latent_state(self, x, u):
 
 		# as input
 		# batch size x time_steps x x_size
@@ -333,18 +332,12 @@ class DKF(object):
 
 		return x
 
-	def compute_loss_and_metrics(self):
-		pass
-
 	def compute_gradients_and_train_op(self):
-		tvars = self.tvars = my_lib.get_scope_var(self.scope)
-		my_lib.get_num_params(tvars)
-		grads = tf.gradients(self.metrics["entropy_loss"], tvars)
-		grads, _ = tf.clip_by_global_norm(grads, self.config.max_grad_norm)
+		tvars = self.tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
 
-		self.metrics["grad_sum"] = tf.add_n([tf.reduce_sum(g) for g in grads])
+		grads = tf.gradients(self.metrics["cost"], tvars)
 
-		optimizer = tf.train.AdamOptimizer(learning_rate=self.config.learning_rate)
+		optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 		self.train_op=optimizer.apply_gradients(
 			zip(grads, tvars),
 			global_step=self.global_step)
@@ -352,64 +345,48 @@ class DKF(object):
 	def model_vars(self):
 		return self.tvars
 
-	def init_feed_dict(self):
-		return {self.phase_train.name: True}
+	def run_epoch(self, session, is_training=False, verbose=False):
 
+		pdb.set_trace()
 
-	def run_epoch(self, session,reader, is_training=False, verbose=False):
-		start_time = time.time()
 		epoch_metrics = {}
 		keep_prob = 1.0
 		fetches = {
-			"loss": self.metrics["loss"],
-			"grad_sum": self.metrics["grad_sum"]
-
+			"cost": self.metrics["cost"]
 		}
+
 		if is_training:
+			phase_train = True
 			if verbose:
 				print("\nTraining...")
 			fetches["train_op"] = self.train_op
-			keep_prob = self.config.keep_prob
-			phase_train = True
 		else:
 			phase_train = False
 			if verbose:
 				print("\nEvaluating...")
 
-
-
 		i, total_loss, grad_sum = 0, 0.0, 0.0
 
-		reader.start()
-
 		i = 0
-		print("Reading till the Batch Number")
-		batch = reader.next()
-		while batch != None:
+		batch = {
+			"x" : np.zeros( shape=(batch_size, max_time_steps, x_size) ), 
+			"u" : np.zeros( shape=(batch_size, max_time_steps, u_size) )
+		}
 
+		while batch != None:
 			
 			feed_dict = {}
-			feed_dict[self.outputs.name] = batch["outputs"]
-			feed_dict[self.inputs.name] = batch["inputs"]
-			feed_dict[self.keep_prob.name] = keep_prob
-			feed_dict[self.phase_train.name] = phase_train
-			feed_dict[self.refresh] = batch["refresh"]
-			feed_dict[self.mask.name] = batch["mask"]
-			
+			feed_dict[self.x.name] = batch["x"]
+			feed_dict[self.u.name] = batch["u"]
 
 			vals = session.run(fetches, feed_dict)
-			total_loss += vals["entropy_loss"]
-			grad_sum += vals["grad_sum"]
-			total_entries += np.sum(batch["mask"])
+
 			i += 1
 			
 			if verbose:
 				print(
 					"% Iter Done :", round(i, 0),
-					"loss :", round((total_loss/total_entries), 3), \
-					"Gradient :", round(vals["grad_sum"],3))
-			batch = reader.next()
-
+					"loss :", round((total_loss/total_entries), 3))
 
 		epoch_metrics["loss"] = round(np.exp(total_loss / total_words), 3)
 		return epoch_metrics
@@ -418,3 +395,10 @@ if __name__ == "__main__":
 
 	dkf = DKF()
 	dkf.build_model()
+
+	session = tf.Session()
+
+	init = tf.global_variables_initializer()
+	session.run(init)
+
+	dkf.run_epoch(session, is_training=True, verbose=True)
