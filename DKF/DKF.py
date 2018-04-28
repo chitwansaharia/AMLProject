@@ -7,15 +7,18 @@ import numpy as np
 import tensorflow as tf
 import pdb
 
-batch_size = 10
+tf.set_random_seed(0)
+np.random.seed(0)
+
+batch_size = 2
 max_time_steps = 5
-learning_rate = 0.4
+learning_rate = 0.000002
 
 x_size = 8
 u_size = 2
 
 num_hidden_units = x_size + u_size
-num_hidden_layers = 1
+num_hidden_layers = 3
 
 z_size = 10
 
@@ -27,6 +30,7 @@ keep_prob = 0.5
 z_distr_params_size = z_size + z_size * z_size
 x_distr_params_size = x_size + x_size * x_size
 
+latent_state_max_time = 100
 
 class DKF(object):
 
@@ -107,15 +111,22 @@ class DKF(object):
 		cov1_shaped = tf.reshape( cov1, shape=(-1, z_size, z_size) )
 		cov2_shaped = tf.reshape( cov2, shape=(-1, z_size, z_size) )
 
-		le = int(cov1.shape[0])
-		covariance_shaped = tf.eye(z_size, batch_shape=[le, time_len])
+		covariance_shaped = tf.matmul(cov1_shaped, cov2_shaped)
 
-		# covariance_shaped = tf.matmul(cov1_shaped, cov2_shaped)
+		# le = int(cov1.shape[0])
+		# covariance_shaped = tf.eye(z_size, batch_shape=[le, time_len])
+
 		covariance = tf.reshape( covariance_shaped, shape=(-1, time_len, z_size, z_size) )
 
 		return mean, covariance
 
 	def custom_gaussian_sampler(self, mean, covariance, n_samples):
+
+		dims = [ int(x) for x in covariance.shape ]
+		out = 1
+		for i in dims:
+			out= i * out
+		covariance = tf.Print(covariance, [covariance], summarize=out)
 
 		ds = tf.contrib.distributions
 
@@ -142,8 +153,8 @@ class DKF(object):
 		cov2 = tf.transpose(cov1, perm=(0, 2, 1))
 		covariance = tf.matmul(cov1, cov2)
 
-		le = int(z.shape[0])
-		covariance = tf.eye(num_rows=x_size, batch_shape=[le])
+		# le = int(z.shape[0])
+		# covariance = tf.eye(num_rows=x_size, batch_shape=[le])
 
 		return mean, covariance
 
@@ -153,7 +164,8 @@ class DKF(object):
 
 		mvg = ds.MultivariateNormalFullCovariance(
 				loc=mean,
-				covariance_matrix=covariance
+				covariance_matrix=covariance,
+				validate_args=True
 			)
 
 		arg_r = tf.reshape(arg, shape=(-1, 1, x_size))
@@ -166,12 +178,14 @@ class DKF(object):
 		ds = tf.contrib.distributions
 		mvg1 = ds.MultivariateNormalFullCovariance(
 				loc=mean1,
-				covariance_matrix=covar1
+				covariance_matrix=covar1,
+				validate_args=True
 			)
 
 		mvg2 = ds.MultivariateNormalFullCovariance(
 				loc=mean2,
-				covariance_matrix=covar2
+				covariance_matrix=covar2,
+				validate_args=True
 			)
 
 		diverg = tf.distributions.kl_divergence(mvg1, mvg2)
@@ -203,8 +217,8 @@ class DKF(object):
 		cov2 = tf.transpose(cov1, perm=(0, 2, 1))
 		covariance = tf.matmul(cov1, cov2)
 
-		le = int(in1.shape[0])
-		covariance = tf.eye(num_rows=z_size, batch_shape=[le])
+		# le = int(in1.shape[0])
+		# covariance = tf.eye(num_rows=z_size, batch_shape=[le])
 
 		return mean, covariance
 
@@ -241,8 +255,6 @@ class DKF(object):
 
 		# batch size x time steps x z_distr_params_size ((mean, log of variance))
 		z_param_mean, z_param_covar = self.recognition_model(self.x, self.u)
-
-		pdb.set_trace()
 
 		# reshaping into batch size * timesteps x z_distr_params_size for generality
 		z_param_mean_shaped = tf.reshape( z_param_mean, shape=(-1, z_size) )
@@ -304,7 +316,23 @@ class DKF(object):
 		# batch size 
 		error_term3 = tf.reduce_sum( out_e3, axis=[1] )
 
-		self.metrics["cost"] = tf.reduce_mean(error_term1 - error_term2 - error_term3)
+		# self.metrics["cost"] = tf.reduce_mean(-error_term3)
+		self.metrics["cost"] = tf.reduce_mean(error_term1-error_term2-error_term3)
+
+		# # #
+		x = self.x[:, :latent_state_max_time, :]
+		u = self.u[:, :latent_state_max_time, :]
+		ls = self.acquire_latent_state(x, u)
+
+		u_r = self.u[:, latent_state_max_time:, :]
+
+		x_p = self.predict_x(ls, u_r)
+		x_r = self.x[:, latent_state_max_time:, :]
+
+		self.metrics["validation_error"] = tf.reduce_sum( tf.reduce_mean( tf.square(x_r-x_p) , axis = 1 ) , axis=0)
+
+		# # #
+		self.metrics["prediction"] = x_p
 
 	def acquire_latent_state(self, x, u):
 
@@ -313,7 +341,7 @@ class DKF(object):
 		# batch size x time_steps x u_size
 		# batch size x time_steps x mean, var
 
-		distr_z_mean, distr_z_covar = self.recognition_model(self, x, u)
+		distr_z_mean, distr_z_covar = self.recognition_model(x, u)
 
 		# consider last output and reshape
 		distr_z_mean, distr_z_covar = tf.reshape(distr_z_mean[:,-1,:], shape=(-1, z_size)), tf.reshape(distr_z_covar[:,-1,:,:], shape=(-1, z_size, z_size))
@@ -358,33 +386,22 @@ class DKF(object):
 			zip(grads, tvars),
 			global_step=self.global_step)
 
-	def model_vars(self):
-		return self.tvars
-
-	def run_epoch(self, session, is_training=False, verbose=False):
+	def run_epoch(self, session, validate=True, verbose=False):
 
 		epoch_metrics = {}
-		keep_prob = 1.0
 		fetches = {
 			"cost": self.metrics["cost"]
 		}
 
-		if is_training:
-			phase_train = True
-			if verbose:
-				print("\nTraining...")
-			fetches["train_op"] = self.train_op
-		else:
-			phase_train = False
-			if verbose:
-				print("\nEvaluating...")
-
-		i, total_loss, grad_sum = 0, 0.0, 0.0
+		if verbose:
+			print("\nTraining...")
+		fetches["train_op"] = self.train_op
 
 		i = 0
+		# use batch iterator here
 		batch = {
-			"x" : np.zeros( shape=(batch_size, max_time_steps, x_size) ), 
-			"u" : np.zeros( shape=(batch_size, max_time_steps, u_size) )
+			"x" : np.random.randn( batch_size, max_time_steps, x_size ), 
+			"u" : np.random.randn( batch_size, max_time_steps, u_size )
 		}
 
 		while batch != None:
@@ -396,15 +413,51 @@ class DKF(object):
 			vals = session.run(fetches, feed_dict)
 
 			i += 1
-			
 			if verbose:
 				print(
 					"% Iter Done :", round(i, 0),
-					"loss :", round(vals["cost"])
+					"loss :", round(vals["cost"]),
 				)
+				print ("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
+
+		if validate:
+			if verbose:
+				print("\nValidating...")
+			fetches["validation_error"] = self.metrics["validation_error"]
+			# load from validation data set
+			batch = {
+				"x": np.random.randn(batch_size, max_time_steps, x_size),
+				"u": np.random.randn(batch_size, max_time_steps, u_size)
+			}
+
+			vals = session.run(fetches, feed_dict)
+
+			print("MSE: %f" % vals["validaton_error"])
 
 		epoch_metrics["loss"] = vals["cost"]
+		epoch_metrics["validation_error"] = vals["validation_error"]
 		return epoch_metrics
+
+	def run_test(self, session, verbose=False):
+
+		fetches = {}
+
+		if verbose:
+			print("\nPredicting...")
+		# load from test set
+		batch = {
+			"x": np.random.randn(batch_size, max_time_steps, x_size),
+			"u": np.random.randn(batch_size, max_time_steps, u_size)
+		}
+		fetches["prediction"] = self.metrics["prediction"]
+
+		feed_dict = {}
+		feed_dict[self.x.name] = batch["x"]
+		feed_dict[self.u.name] = batch["u"]
+
+		vals = session.run(fetches, feed_dict)
+
+		print("prediction: %f" % vals["prediction"])		
 
 if __name__ == "__main__":
 
@@ -416,4 +469,5 @@ if __name__ == "__main__":
 	init = tf.global_variables_initializer()
 	session.run(init)
 
-	dkf.run_epoch(session, is_training=True, verbose=True)
+	dkf.run_epoch(session, validate=True, verbose=True)
+	dkf.run_test(session, verbose=True)
