@@ -174,6 +174,7 @@ class DKF(object):
 
 		return values
 
+	@staticmethod
 	def kl(mean1, covar1, mean2, covar2):
 		ds = tf.contrib.distributions
 		mvg1 = ds.MultivariateNormalFullCovariance(
