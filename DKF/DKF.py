@@ -7,20 +7,20 @@ import numpy as np
 import tensorflow as tf
 import pdb
 
-batch_size = 20
-max_time_steps = 12
+batch_size = 10
+max_time_steps = 5
 learning_rate = 0.4
 
-x_size = 10
-u_size = 10
+x_size = 8
+u_size = 2
 
 num_hidden_units = x_size + u_size
-num_hidden_layers = 3
+num_hidden_layers = 1
 
-z_size = 100
+z_size = 10
 
-n_samples_term_1 = 100
-n_samples_term_3 = 100
+n_samples_term_1 = 10
+n_samples_term_3 = 10
 
 keep_prob = 0.5
 
@@ -103,7 +103,15 @@ class DKF(object):
 		mean = out[:,:,:z_size]
 		cov1 = tf.reshape(out[:,:,z_size:], shape=(-1, time_len, z_size, z_size))
 		cov2 = tf.transpose(cov1, perm=(0, 1, 3, 2))
-		covariance = cov1 + cov2
+
+		cov1_shaped = tf.reshape( cov1, shape=(-1, z_size, z_size) )
+		cov2_shaped = tf.reshape( cov2, shape=(-1, z_size, z_size) )
+
+		le = int(cov1.shape[0])
+		covariance_shaped = tf.eye(z_size, batch_shape=[le, time_len])
+
+		# covariance_shaped = tf.matmul(cov1_shaped, cov2_shaped)
+		covariance = tf.reshape( covariance_shaped, shape=(-1, time_len, z_size, z_size) )
 
 		return mean, covariance
 
@@ -132,7 +140,10 @@ class DKF(object):
 		mean = out[:,:x_size]
 		cov1 = tf.reshape(out[:,x_size:], shape=(-1, x_size, x_size))
 		cov2 = tf.transpose(cov1, perm=(0, 2, 1))
-		covariance = cov1 + cov2
+		covariance = tf.matmul(cov1, cov2)
+
+		le = int(z.shape[0])
+		covariance = tf.eye(num_rows=x_size, batch_shape=[le])
 
 		return mean, covariance
 
@@ -190,7 +201,10 @@ class DKF(object):
 		mean = out[:,:z_size]
 		cov1 = tf.reshape(out[:,z_size:], shape=(-1, z_size, z_size))
 		cov2 = tf.transpose(cov1, perm=(0, 2, 1))
-		covariance = cov1 + cov2
+		covariance = tf.matmul(cov1, cov2)
+
+		le = int(in1.shape[0])
+		covariance = tf.eye(num_rows=z_size, batch_shape=[le])
 
 		return mean, covariance
 
@@ -222,11 +236,13 @@ class DKF(object):
 		# processed_inputs = self.inputs
 
 		z1_prior_mean = tf.zeros(shape=(z_size))
-		z1_prior_covar = tf.zeros(shape=(z_size, z_size))
+		z1_prior_covar = tf.eye(z_size)
 		# z_transition = mean, sigma
 
 		# batch size x time steps x z_distr_params_size ((mean, log of variance))
 		z_param_mean, z_param_covar = self.recognition_model(self.x, self.u)
+
+		pdb.set_trace()
 
 		# reshaping into batch size * timesteps x z_distr_params_size for generality
 		z_param_mean_shaped = tf.reshape( z_param_mean, shape=(-1, z_size) )
@@ -254,11 +270,11 @@ class DKF(object):
 		error_term1 = tf.reduce_sum(tf.reshape( expectation_out1, shape=(-1, max_time_steps) ), axis=[1])
 
 		# batch size x 1 (t = 0) x 2 (mean, log variance)
-		z_param_mean_0, z_param_covar_0 = z_param_mean[:,0,:], z_param_covar[:,0,:]
+		z_param_mean_0, z_param_covar_0 = z_param_mean[:,0,:], z_param_covar[:,0,:,:]
 		# batch size x time steps-1 (t = 1:max) x 2 (mean, log variance)
-		z_param_mean_1_t, z_param_covar_1_t = z_param_mean[:,1:,:], z_param_covar[:,1:,:]
+		z_param_mean_1_t, z_param_covar_1_t = z_param_mean[:,1:,:], z_param_covar[:,1:,:,:]
 		# batch size x time steps-1 (t = 0:max-1) x 2 (mean, log variance)
-		z_param_mean_0_t_1, z_param_covar_0_t_1 = z_param_mean[:,:-1,:], z_param_covar[:,:-1,:]
+		z_param_mean_0_t_1, z_param_covar_0_t_1 = z_param_mean[:,:-1,:], z_param_covar[:,:-1,:,:]
 
 		# batch size
 		error_term2 = self.custom_kl_e2( z_param_mean_0, z_param_covar_0, z1_prior_mean, z1_prior_covar, batch_size)
@@ -347,8 +363,6 @@ class DKF(object):
 
 	def run_epoch(self, session, is_training=False, verbose=False):
 
-		pdb.set_trace()
-
 		epoch_metrics = {}
 		keep_prob = 1.0
 		fetches = {
@@ -386,14 +400,15 @@ class DKF(object):
 			if verbose:
 				print(
 					"% Iter Done :", round(i, 0),
-					"loss :", round((total_loss/total_entries), 3))
+					"loss :", round(vals["cost"])
+				)
 
-		epoch_metrics["loss"] = round(np.exp(total_loss / total_words), 3)
+		epoch_metrics["loss"] = vals["cost"]
 		return epoch_metrics
 
 if __name__ == "__main__":
 
-	dkf = DKF()
+	dkf = DKF(device="cpu")
 	dkf.build_model()
 
 	session = tf.Session()
