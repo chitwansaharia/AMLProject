@@ -116,3 +116,7 @@ data/*.txt
 data/*.pyc
 *.csv
 *.zip
+
+
+# Script 
+typescript
