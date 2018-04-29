@@ -11,7 +11,7 @@ import os
 import pdb
 import pandas as pd
 
-parent_path = os.getcwd() + "/data/"
+parent_path = __file__.split((os.path.basename(__file__)))[0]
 
 output_dim = 2
 

@@ -118,3 +118,6 @@ data/*.pyc
 *.zip
 
 *.html
+
+# Script 
+typescript

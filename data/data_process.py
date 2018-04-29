@@ -26,38 +26,30 @@ data['CompetitionDistance'] = (data['CompetitionDistance']-data['CompetitionDist
 
 data['CompetitionOpenSinceMonth'].fillna(0,inplace=True)
 
-min_year = data['CompetitionOpenSinceYear'].min()
-data['CompetitionOpenSinceYear'].fillna(min_year-1,inplace=True)
-data['CompetitionOpenSinceYear'] = data['CompetitionOpenSinceYear']-min_year+1
-data['CompetitionOpenSinceYear'] = (data['CompetitionOpenSinceYear']-data['CompetitionOpenSinceYear'].mean())/data['CompetitionOpenSinceYear'].std()
-
+data['CompetitionOpenSinceYear'].fillna(0,inplace=True)
+data.loc[data['CompetitionOpenSinceYear'] == 1900, 'CompetitionOpenSinceYear'] = 1
+data.loc[data['CompetitionOpenSinceYear']
+         == 1961, 'CompetitionOpenSinceYear'] = 2
+data.loc[data['CompetitionOpenSinceYear']
+         >= 1900, 'CompetitionOpenSinceYear'] -= 1987 
 
 
 data['Promo2SinceWeek'].fillna(0,inplace=True)
-data['Promo2SinceWeek'] = (data['Promo2SinceWeek']-data['Promo2SinceWeek'].mean())/data['Promo2SinceWeek'].std()
+data.loc[data['Promo2SinceWeek'] != 0,'Promo2SinceWeek'] = ((data['Promo2SinceWeek']-1)//4 + 1)
+
 
 min_year = data['Promo2SinceYear'].min()
 data['Promo2SinceYear'].fillna(min_year-1,inplace=True)
 data['Promo2SinceYear'] = data['Promo2SinceYear']-min_year + 1
 
-import pdb
 
-year = {'Jan' : 0,'Feb' : 1,'Mar' : 2,'Apr' : 3,'May' : 4,'Jun' : 5,'Jul' : 6,'Aug' : 7,'Sept' : 8,'Oct' : 9,'Nov' : 10,'Dec' : 11}
-data['PromoInterval'].fillna("",inplace=True)
-
-promo_interval = []
-
-import pdb;
- # pdb.set_trace()
-
-
-for val in data['PromoInterval']:
-	one_hot = [0]*12
-	if len(val) != 0:
-		month_list = val.split(',')
-		for month in month_list:
-			one_hot[year[month]] = 1
-	promo_interval.append(one_hot)
+data['PromoInterval'].fillna(0,inplace=True)
+data.loc[data['PromoInterval']
+         == "Jan,Apr,Jul,Oct", "PromoInterval"] = 1
+data.loc[data['PromoInterval']
+         == "Feb,May,Aug,Nov", "PromoInterval"] = 2
+data.loc[data['PromoInterval']
+         == "Mar,Jun,Sept,Dec", "PromoInterval"] = 3
 
 
 def encode_date(date):
@@ -80,11 +72,11 @@ for index in range(len(data)):
 	list_item.append(int(data_item['Assortment']))
 	list_item.append(data_item['CompetitionDistance'])
 	list_item.append(int(data_item["CompetitionOpenSinceMonth"]))
-	list_item.append(data_item["CompetitionOpenSinceYear"])
+	list_item.append(int(data_item["CompetitionOpenSinceYear"]))
 	list_item.append(int(data_item["Promo2"]))
-	list_item.append(data_item['Promo2SinceWeek'])
+	list_item.append(int(data_item['Promo2SinceWeek']))
 	list_item.append(int(data_item["Promo2SinceYear"]))
-	list_item.extend(promo_interval[index])
+	list_item.append(int(data_item['PromoInterval']))
 	writer.writerow(list_item)   
 
 

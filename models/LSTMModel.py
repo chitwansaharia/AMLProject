@@ -49,22 +49,27 @@ class LSTMModel(object):
 	def process_inputs(self,inputs):
 		output = [tf.nn.embedding_lookup(self.store_type_embedding,tf.cast(inputs[:,:,0],dtype= tf.int32))]
 		output.append(tf.nn.embedding_lookup(self.assortment_type_embedding,tf.cast(inputs[:,:,1],dtype= tf.int32)))
-		output.append(inputs[:,:,2:3])
+		temp = tf.reshape(inputs[:,:,2:3],[-1,1])
+		output.append(tf.reshape(tf.add(tf.matmul(temp, self.comp_dist_weights),
+								  self.comp_dist_bias), [self.batch_size, self.max_time_steps, -1]))
 		output.append(tf.nn.embedding_lookup(self.competition_open_since_month_embedding,tf.cast(inputs[:,:,3],dtype= tf.int32)))
-		output.append(inputs[:,:,4:5])
+		output.append(tf.nn.embedding_lookup(self.comp_year_embedding,tf.cast(inputs[:,:,4],dtype= tf.int32)))
+
 		output.append(tf.nn.embedding_lookup(self.promo2_embedding,tf.cast(inputs[:,:,5],dtype= tf.int32)))
-		output.append(inputs[:,:,6:7])
+		output.append(tf.nn.embedding_lookup(self.promo2_week_embedding,
+                                       tf.cast(inputs[:, :, 6], dtype=tf.int32)))
+
 		output.append(tf.nn.embedding_lookup(self.promo2_since_year_embedding,tf.cast(inputs[:,:,7],dtype= tf.int32)))
-		temp = tf.reshape(inputs[:,:,8:20],[-1,12])
-		output.append(tf.reshape(tf.add(tf.matmul(temp,self.promo_interval_weights),self.promo_interval_bias),[self.batch_size,self.max_time_steps,-1]))
-		output.append(tf.nn.embedding_lookup(self.day_of_week_embedding,tf.cast(inputs[:,:,20],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.year_embedding,tf.cast(inputs[:,:,21],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.month_embedding,tf.cast(inputs[:,:,22],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.day_embedding,tf.cast(inputs[:,:,23],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.open_embedding,tf.cast(inputs[:,:,24],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.promo_embedding,tf.cast(inputs[:,:,25],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.state_holiday_embedding,tf.cast(inputs[:,:,26],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.school_holiday_embedding,tf.cast(inputs[:,:,27],dtype= tf.int32)))
+		output.append(tf.nn.embedding_lookup(
+			self.promo_interval_embedding, tf.cast(inputs[:, :, 8], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.day_of_week_embedding,tf.cast(inputs[:,:,9],dtype= tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.year_embedding,tf.cast(inputs[:,:,10],dtype= tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.month_embedding,tf.cast(inputs[:,:,11],dtype= tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.day_embedding,tf.cast(inputs[:,:,12],dtype= tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.open_embedding,tf.cast(inputs[:,:,13],dtype= tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.promo_embedding,tf.cast(inputs[:,:,14],dtype= tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.state_holiday_embedding,tf.cast(inputs[:,:,15],dtype= tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.school_holiday_embedding,tf.cast(inputs[:,:,16],dtype= tf.int32)))
 		return tf.concat(output,axis = 2)
 
 
@@ -82,22 +87,27 @@ class LSTMModel(object):
 		# Embeddings
 
 		with tf.variable_scope("embeddings"):
-			self.store_type_embedding = tf.get_variable("store_type_embedding",[4,70])
-			self.assortment_type_embedding = tf.get_variable("assortment_type_embedding",[3,70])
+			self.store_type_embedding = tf.get_variable("store_type_embedding",[4,50])
+			self.assortment_type_embedding = tf.get_variable("assortment_type_embedding",[3,50])
 			self.competition_open_since_month_embedding = tf.get_variable("competition_open_since_month_embedding",[13,100])
 			self.promo2_embedding = tf.get_variable("promo2_embedding",[2,50])
 			self.promo2_since_year_embedding= tf.get_variable("promo2_since_year_embedding",[8,70])
-			self.promo_interval_weights = tf.get_variable("promo_interval_weights",[12,100],dtype=tf.float32)
-			self.promo_interval_bias = tf.get_variable("promo_interval_bias",[100],dtype=tf.float32)
+			self.promo_interval_embedding = tf.get_variable("promo_interval_embedding",[4,50],dtype=tf.float32)
+			
+			self.comp_dist_weights = tf.get_variable("comp_dist_weights",[1,50],dtype=tf.float32)
+			self.comp_dist_bias = tf.get_variable("comp_dist_bias",[50],dtype=tf.float32)
 
-			self.day_of_week_embedding = tf.get_variable("day_of_week_embedding",[7,70])
-			self.year_embedding = tf.get_variable("year_embedding",[3,50])
-			self.month_embedding = tf.get_variable("month_embedding",[12,80])
-			self.day_embedding = tf.get_variable("day_embedding",[31,100])
-			self.open_embedding = tf.get_variable("open_embedding",[2,30])
-			self.promo_embedding = tf.get_variable("promo_embedding",[2,30])
-			self.state_holiday_embedding = tf.get_variable("state_holiday_embedding",[4,30])
-			self.school_holiday_embedding = tf.get_variable("school_holiday_embedding",[2,30])
+			self.comp_year_embedding =  tf.get_variable("comp_year_embedding",[29,100],	dtype=tf.float32)
+			self.promo2_week_embedding = tf.get_variable("promo2_week_embedding",[14,100])
+			
+			self.day_of_week_embedding = tf.get_variable("day_of_week_embedding",[7,200])
+			self.year_embedding = tf.get_variable("year_embedding",[3,100])
+			self.month_embedding = tf.get_variable("month_embedding",[12,200])
+			self.day_embedding = tf.get_variable("day_embedding",[31,200])
+			self.open_embedding = tf.get_variable("open_embedding",[2,70])
+			self.promo_embedding = tf.get_variable("promo_embedding",[2,70])
+			self.state_holiday_embedding = tf.get_variable("state_holiday_embedding",[4,100])
+			self.school_holiday_embedding = tf.get_variable("school_holiday_embedding",[2,70])
 
 
 		processed_inputs = self.process_inputs(self.inputs)
@@ -109,12 +119,23 @@ class LSTMModel(object):
 				variational_recurrent=True,
 				dtype=tf.float32)
 
-		cells = tf.contrib.rnn.MultiRNNCell([rnn_cell() for _ in range(num_hidden_layers)])        
+		cells = tf.contrib.rnn.MultiRNNCell([rnn_cell() for _ in range(num_hidden_layers)])
 
-		rnn_initial_state = self.initial_state =  cells.zero_state(self.batch_size, dtype=tf.float32)
+
+
+		state = self.initial_state =  cells.zero_state(self.batch_size, dtype=tf.float32)
 
 		
-		outputs,state = tf.nn.dynamic_rnn(cells,processed_inputs,initial_state=rnn_initial_state,dtype=tf.float32)
+		# outputs,state = tf.nn.dynamic_rnn(cells,processed_inputs,initial_state=rnn_initial_state,dtype=tf.float32)
+		
+		outputs = []
+		with tf.variable_scope("lstm", initializer=rand_uni_initializer):
+			for time_step in range(self.max_time_steps):
+				if time_step > 0:
+					tf.get_variable_scope().reuse_variables()
+				(cell_output, state) = cells(processed_inputs[:,time_step,:], state)
+				outputs.append(cell_output)
+
 		self.metrics["final_state"] = state
 
 		full_conn_layers = [tf.reshape(tf.concat(axis=1, values=outputs), [-1, lstm_units])]
@@ -141,8 +162,9 @@ class LSTMModel(object):
 		grads, _ = tf.clip_by_global_norm(grads, self.config.max_grad_norm)
 
 		self.metrics["grad_sum"] = tf.add_n([tf.reduce_sum(g) for g in grads])
-
-		optimizer = tf.train.AdamOptimizer(learning_rate = self.config.learning_rate)
+		learning_rate = tf.train.exponential_decay(self.config.learning_rate, self.global_step,
+										   10000, 0.96, staircase=True)
+		optimizer = tf.train.AdamOptimizer(learning_rate = learning_rate)
 		self.train_op = optimizer.apply_gradients(
 			zip(grads, tvars),
 			global_step=self.global_step)

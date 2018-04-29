@@ -32,9 +32,10 @@ def get_num_params(l_var):
     for var in l_var:
         num_params = 1
         for dim in var.get_shape() : num_params *= dim.value
-        print var.name, "->num_params: ", human_readable(num_params)
+        
+        print(var.name, "->num_params: ", human_readable(num_params))
         total_params += num_params
-    print "Total_params :" , human_readable(total_params)
+    print( "Total_params :" , human_readable(total_params))
     return total_params
 
 def one_hot(x,n):

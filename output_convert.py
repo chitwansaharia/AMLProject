@@ -20,6 +20,7 @@ for _,val in outputs.iterrows():
 		finaldict[temp[0]+1] = val_list[-1]*std+mean
 
 temp = map(list,finaldict.items())
+temp.insert(0, ['"Id"','"Sales"'])
 with open("submission.csv", "wb") as f:
     writer = csv.writer(f)
     writer.writerows(temp)
