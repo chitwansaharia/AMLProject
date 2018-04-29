@@ -33,10 +33,10 @@ def base_model_config():
     config.max_time_steps = 20
     config.init_scale = 1.0
     config.max_grad_norm = 5
-    config.learning_rate = 0.002
+    config.learning_rate = 0.01
     config.keep_prob = 0.8
     config.batch_size = 20
-    config.load_mode = "best"
+    config.load_mode = "fresh"
     config.patience = 3
     return config
 
