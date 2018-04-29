@@ -87,27 +87,27 @@ class LSTMModel(object):
 		# Embeddings
 
 		with tf.variable_scope("embeddings"):
-			self.store_type_embedding = tf.get_variable("store_type_embedding",[4,50])
-			self.assortment_type_embedding = tf.get_variable("assortment_type_embedding",[3,50])
-			self.competition_open_since_month_embedding = tf.get_variable("competition_open_since_month_embedding",[13,100])
-			self.promo2_embedding = tf.get_variable("promo2_embedding",[2,50])
-			self.promo2_since_year_embedding= tf.get_variable("promo2_since_year_embedding",[8,70])
-			self.promo_interval_embedding = tf.get_variable("promo_interval_embedding",[4,50],dtype=tf.float32)
+			self.store_type_embedding = tf.get_variable("store_type_embedding",[4,5])
+			self.assortment_type_embedding = tf.get_variable("assortment_type_embedding",[3,5])
+			self.competition_open_since_month_embedding = tf.get_variable("competition_open_since_month_embedding",[13,20])
+			self.promo2_embedding = tf.get_variable("promo2_embedding",[2,5])
+			self.promo2_since_year_embedding= tf.get_variable("promo2_since_year_embedding",[8,10])
+			self.promo_interval_embedding = tf.get_variable("promo_interval_embedding",[4,10],dtype=tf.float32)
 			
-			self.comp_dist_weights = tf.get_variable("comp_dist_weights",[1,50],dtype=tf.float32)
-			self.comp_dist_bias = tf.get_variable("comp_dist_bias",[50],dtype=tf.float32)
+			self.comp_dist_weights = tf.get_variable("comp_dist_weights",[1,5],dtype=tf.float32)
+			self.comp_dist_bias = tf.get_variable("comp_dist_bias",[5],dtype=tf.float32)
 
-			self.comp_year_embedding =  tf.get_variable("comp_year_embedding",[29,100],	dtype=tf.float32)
-			self.promo2_week_embedding = tf.get_variable("promo2_week_embedding",[14,100])
+			self.comp_year_embedding =  tf.get_variable("comp_year_embedding",[29,10],	dtype=tf.float32)
+			self.promo2_week_embedding = tf.get_variable("promo2_week_embedding",[14,10])
 			
-			self.day_of_week_embedding = tf.get_variable("day_of_week_embedding",[7,200])
-			self.year_embedding = tf.get_variable("year_embedding",[3,100])
-			self.month_embedding = tf.get_variable("month_embedding",[12,200])
-			self.day_embedding = tf.get_variable("day_embedding",[31,200])
-			self.open_embedding = tf.get_variable("open_embedding",[2,70])
-			self.promo_embedding = tf.get_variable("promo_embedding",[2,70])
-			self.state_holiday_embedding = tf.get_variable("state_holiday_embedding",[4,100])
-			self.school_holiday_embedding = tf.get_variable("school_holiday_embedding",[2,70])
+			self.day_of_week_embedding = tf.get_variable("day_of_week_embedding",[7,20])
+			self.year_embedding = tf.get_variable("year_embedding",[3,10])
+			self.month_embedding = tf.get_variable("month_embedding",[12,20])
+			self.day_embedding = tf.get_variable("day_embedding",[31,20])
+			self.open_embedding = tf.get_variable("open_embedding",[2,7])
+			self.promo_embedding = tf.get_variable("promo_embedding",[2,7])
+			self.state_holiday_embedding = tf.get_variable("state_holiday_embedding",[4,10])
+			self.school_holiday_embedding = tf.get_variable("school_holiday_embedding",[2,7])
 
 
 		processed_inputs = self.process_inputs(self.inputs)
@@ -282,7 +282,7 @@ class LSTMModel(object):
 				for j in range(self.max_time_steps):
 					if batch['mask'][i][j] == 1.0:
 						temp = [batch["stores"][i]]
-						temp.extend(list(batch["inputs"][i][j][20:]))
+						temp.extend(list(batch["inputs"][i][j][9:]))
 						temp.extend([reshape_outputs[i][j][0]])
 						final_outputs.append(temp)
 			batch = reader.next()

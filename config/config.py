@@ -28,8 +28,8 @@ class config_container(object):
 def base_model_config():
     config = config_container()
     config.input_size = 17
-    config.lstm_units = 300
-    config.num_hidden_layers = 4
+    config.lstm_units = 128
+    config.num_hidden_layers = 3
     config.max_time_steps = 20
     config.init_scale = 1.0
     config.max_grad_norm = 5
