@@ -115,3 +115,4 @@ data/datasets/
 data/*.txt
 data/*.pyc
 *.csv
+*.zip
