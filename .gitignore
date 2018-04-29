@@ -116,3 +116,5 @@ data/*.txt
 data/*.pyc
 *.csv
 *.zip
+
+*.html

@@ -1,7 +1,6 @@
 import sys
 import numpy  as np
 import os, gc
-import cPickle
 import copy
 import logging
 import threading
@@ -12,13 +11,15 @@ import os
 import pdb
 import pandas as pd
 
-parent_path = "/home/chitwan/Project/AMLProject/data/"
+parent_path = os.getcwd() + "/data/"
 
 output_dim = 2
 
 discontinue_index = 122
 
 logger = logging.getLogger(__name__)
+
+
 
 
 class SSFetcher(threading.Thread):
