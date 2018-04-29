@@ -1,7 +1,6 @@
 import sys
 import numpy  as np
 import os, gc
-import cPickle
 import copy
 import logging
 import threading
@@ -19,6 +18,8 @@ output_dim = 2
 discontinue_index = 122
 
 logger = logging.getLogger(__name__)
+
+
 
 
 class SSFetcher(threading.Thread):
