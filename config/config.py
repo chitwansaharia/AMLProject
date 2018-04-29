@@ -4,7 +4,7 @@ import os
 class config_container(object):
 
     def __iter__(self):
-        for attr, value in self.__dict__.iteritems():
+        for _, value in self.__dict__.iteritems():
             if value:
                 yield value
 
@@ -28,15 +28,15 @@ class config_container(object):
 def base_model_config():
     config = config_container()
     config.input_size = 28
-    config.lstm_units = 200
+    config.lstm_units = 300
     config.num_hidden_layers = 4
     config.max_time_steps = 20
     config.init_scale = 1.0
     config.max_grad_norm = 5
-    config.learning_rate = 0.01
-    config.keep_prob = 0.7
+    config.learning_rate = 0.002
+    config.keep_prob = 0.8
     config.batch_size = 20
-    config.load_mode = "fresh"
+    config.load_mode = "best"
     config.patience = 3
     return config
 
@@ -49,4 +49,4 @@ def config():
 
 if __name__ == '__main__':
     config = config()
-    print config
+    print(config)
