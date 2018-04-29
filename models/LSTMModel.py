@@ -51,15 +51,15 @@ class LSTMModel(object):
 		output.append(tf.nn.embedding_lookup(self.assortment_type_embedding,tf.cast(inputs[:,:,1],dtype= tf.int32)))
 		temp = tf.reshape(inputs[:,:,2:3],[-1,1])
 		output.append(tf.reshape(tf.add(tf.matmul(temp, self.comp_dist_weights),
-                                  self.comp_dist_bias), [self.batch_size, self.max_time_steps, -1]))
+								  self.comp_dist_bias), [self.batch_size, self.max_time_steps, -1]))
 		output.append(tf.nn.embedding_lookup(self.competition_open_since_month_embedding,tf.cast(inputs[:,:,3],dtype= tf.int32)))
 		temp = tf.reshape(inputs[:, :, 4:5], [-1, 1])
 		output.append(tf.reshape(tf.add(tf.matmul(temp, self.comp_open_since_year_weights),
-                                  self.comp_open_since_year_bias), [self.batch_size, self.max_time_steps, -1]))
+								  self.comp_open_since_year_bias), [self.batch_size, self.max_time_steps, -1]))
 		output.append(tf.nn.embedding_lookup(self.promo2_embedding,tf.cast(inputs[:,:,5],dtype= tf.int32)))
 		temp = tf.reshape(inputs[:, :, 6:7], [-1, 1])
 		output.append(tf.reshape(tf.add(tf.matmul(temp, self.promo2_week_weights),
-                                  self.promo2_week_bias), [self.batch_size, self.max_time_steps, -1]))
+								  self.promo2_week_bias), [self.batch_size, self.max_time_steps, -1]))
 		output.append(tf.nn.embedding_lookup(self.promo2_since_year_embedding,tf.cast(inputs[:,:,7],dtype= tf.int32)))
 		temp = tf.reshape(inputs[:,:,8:20],[-1,12])
 		output.append(tf.reshape(tf.add(tf.matmul(temp,self.promo_interval_weights),self.promo_interval_bias),[self.batch_size,self.max_time_steps,-1]))
@@ -100,14 +100,14 @@ class LSTMModel(object):
 			self.comp_dist_bias = tf.get_variable("comp_dist_bias",[100],dtype=tf.float32)
 
 			self.comp_open_since_year_weights = tf.get_variable(
-			    "compe_open_since_year_weights", [1, 100], dtype=tf.float32)
+				"compe_open_since_year_weights", [1, 100], dtype=tf.float32)
 			self.comp_open_since_year_bias = tf.get_variable(
-			    "compe_open_since_year_bias", [100], dtype=tf.float32)
+				"compe_open_since_year_bias", [100], dtype=tf.float32)
 
 			self.promo2_week_weights = tf.get_variable(
-			    "promo2_week_weights", [1, 100], dtype=tf.float32)
+				"promo2_week_weights", [1, 100], dtype=tf.float32)
 			self.promo2_week_bias = tf.get_variable(
-			    "promo2_week_bias", [100], dtype=tf.float32)
+				"promo2_week_bias", [100], dtype=tf.float32)
 			
 			self.day_of_week_embedding = tf.get_variable("day_of_week_embedding",[7,200])
 			self.year_embedding = tf.get_variable("year_embedding",[3,100])
@@ -132,18 +132,18 @@ class LSTMModel(object):
 
 
 
-		rnn_initial_state = self.initial_state =  cells.zero_state(self.batch_size, dtype=tf.float32)
+		state = self.initial_state =  cells.zero_state(self.batch_size, dtype=tf.float32)
 
 		
 		# outputs,state = tf.nn.dynamic_rnn(cells,processed_inputs,initial_state=rnn_initial_state,dtype=tf.float32)
 		
 		outputs = []
 		with tf.variable_scope("lstm", initializer=rand_uni_initializer):
-            for time_step in range(max_tokens_per_caption):
-                if time_step > 0:
-                    tf.get_variable_scope().reuse_variables()
-                (cell_output, state) = cells(processed_inputs[:,time_step,:], state)
-                outputs.append(cell_output)
+			for time_step in range(self.max_time_steps):
+				if time_step > 0:
+					tf.get_variable_scope().reuse_variables()
+				(cell_output, state) = cells(processed_inputs[:,time_step,:], state)
+				outputs.append(cell_output)
 
 		self.metrics["final_state"] = state
 
@@ -172,7 +172,7 @@ class LSTMModel(object):
 
 		self.metrics["grad_sum"] = tf.add_n([tf.reduce_sum(g) for g in grads])
 		learning_rate = tf.train.exponential_decay(self.config.learning_rate, self.global_step,
-                                           10000, 0.96, staircase=True)
+										   10000, 0.96, staircase=True)
 		optimizer = tf.train.AdamOptimizer(learning_rate = learning_rate)
 		self.train_op = optimizer.apply_gradients(
 			zip(grads, tvars),
