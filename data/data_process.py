@@ -5,9 +5,9 @@ import pickle
 
 # flag = 1
 # if flag == 0:
-# 	data = pd.read_csv('train.csv')
-# 	data['Sales'] = (data['Sales']-data['Sales'].mean())/data['Sales'].std()
-# 	data['Customers'] = (data['Customers']-data['Customers'].mean())/data['Customers'].std()
+	# data = pd.read_csv('train.csv')
+	# data['Sales'] = (data['Sales']-data['Sales'].mean())/data['Sales'].std()
+	# data['Customers'] = (data['Customers']-data['Customers'].mean())/data['Customers'].std()
 
 # else:
 # 	data = pd.read_csv('test.csv')

@@ -127,9 +127,11 @@ class LSTMModel(object):
 					biases_initializer=rand_uni_initializer,
 					trainable=True)
 
+
 	def compute_loss_and_metrics(self):
-		self.model_outputs = tf.multiply(self.model_outputs,tf.expand_dims(tf.reshape(self.mask,[-1]),-1))
-		self.metrics["entropy_loss"] = tf.divide(tf.nn.l2_loss(self.model_outputs - tf.reshape(self.targets,[-1,2])),tf.reduce_sum(self.mask))
+		temp = tf.multiply(tf.reshape(self.model_outputs,[self.batch_size,self.max_time_steps,-1]),tf.expand_dims(self.mask,-1))
+
+		self.metrics["entropy_loss"] = tf.divide(tf.nn.l2_loss(tf.reshape(temp,[-1,2]) - tf.reshape(self.targets,[-1,2])),tf.reduce_sum(self.mask))
 
 
 	def compute_gradients_and_train_op(self):
@@ -221,4 +223,47 @@ class LSTMModel(object):
 			batch = reader.next()
 
 		return total_loss
+
+	def test(self,session,reader):
+		keep_prob = self.config.keep_prob
+		final_outputs = []
+		fetches = {
+			"outputs" : self.model_outputs,
+			"final_state" : self.metrics["final_state"]
+		}
+		phase_train = False
+		state = session.run(self.initial_state)
+
+		reader.start()
+
+		i = 0
+		batch = reader.next()
+		while batch != None:        
+			feed_dict = {}
+			feed_dict[self.inputs.name] = batch["inputs"]
+			feed_dict[self.keep_prob.name] = keep_prob
+			feed_dict[self.phase_train.name] = phase_train
+			
+			
+			feed_dict[self.initial_state] = state
+
+			vals = session.run(fetches, feed_dict)
+
+			if batch["refresh"] == 1:
+				state = session.run(self.initial_state)
+
+			else:
+				state = vals["final_state"] 
+			reshape_outputs = np.reshape(vals["outputs"],[self.batch_size,self.max_time_steps,-1])
+
+			for i in range(len(batch["stores"])):
+				for j in range(self.max_time_steps):
+					if batch['mask'][i][j] == 1.0:
+						temp = [batch["stores"][i]]
+						temp.extend(list(batch["inputs"][i][j][20:]))
+						temp.extend([reshape_outputs[i][j][0]])
+						final_outputs.append(temp)
+			batch = reader.next()
+
+		return final_outputs
 

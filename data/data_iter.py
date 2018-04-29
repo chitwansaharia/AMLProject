@@ -29,7 +29,7 @@ class SSFetcher(threading.Thread):
 
 	def run(self):
 		diter = self.parent
-		if diter.mode == "valid":
+		if diter.mode == "valid" :
 			np.random.shuffle(diter.stores)
 			exit = False
 			present_batch = []
@@ -67,8 +67,9 @@ class SSFetcher(threading.Thread):
 					refresh = 0
 					diter.queue.put(batch)
 			diter.queue.put(None)
+			return
 
-		else:
+		elif diter.mode == "train":
 			np.random.shuffle(diter.short_stores)
 			np.random.shuffle(diter.long_stores)
 			long_list_bool = True
@@ -150,6 +151,44 @@ class SSFetcher(threading.Thread):
 					diter.queue.put(batch)
 			diter.queue.put(None)
 			return
+		if diter.mode == "test":
+			exit = False
+			present_batch = []
+			time_steps_done = 0
+			batch_set = False
+			offset = 0 
+			while not exit:
+				present_batch = diter.stores[offset:offset+diter.batch_size]
+				offset += diter.batch_size
+				batch_set = True
+				time_steps_done = 0
+				if len(present_batch) < diter.batch_size:
+					exit = True
+				while batch_set:
+					X_batch = np.zeros((diter.batch_size,diter.max_time_steps,diter.config.input_size),dtype=np.float32)
+					mask = np.zeros((diter.batch_size,diter.max_time_steps))
+					refresh = 0
+					for b_index in range(min(diter.batch_size,len(present_batch))):
+						for t_index in range(diter.max_time_steps):
+							data_item = diter.data_dict[present_batch[b_index]][time_steps_done+t_index]
+							X_batch[b_index,t_index,:] = diter.store_dict[present_batch[b_index]] + data_item
+							mask[b_index,t_index] = 1.0
+							if time_steps_done + t_index == diter.length-1:
+								batch_set = False
+								refresh = 1
+								break
+					time_steps_done += t_index+1
+					batch = {}
+					batch['inputs'] = X_batch
+					batch['refresh'] = refresh
+					batch['stores'] = present_batch
+					batch['mask'] = mask
+					refresh = 0
+					diter.queue.put(batch)
+			diter.queue.put(None)
+			return
+
+
 
 
 
@@ -166,8 +205,10 @@ class SSIterator(object):
 		self.mode = mode
 		if self.mode == "train":
 			self.load_train_files()
-		else:
+		elif self.mode == "valid":
 			self.load_valid_files()
+		else:
+			self.load_test_files()
 		
 
 	def load_train_files(self):
@@ -220,6 +261,26 @@ class SSIterator(object):
 			self.store_dict[val_list[0]] = val_list[1:]
 		self.length = len(self.data_dict[1])
 
+	def load_test_files(self):
+		config = self.config
+		data = pd.read_csv(parent_path+"datasets/test_modified.csv",header = None)
+		self.data_dict = {}
+		for _,val in data.iterrows():
+			val_list = val.tolist()
+			val_list[1] -= 1
+			try:
+				self.data_dict[val_list[0]].append(val_list[1:])
+			except KeyError:
+				self.data_dict[val_list[0]] = [val_list[1:]]
+		for item in self.data_dict:
+			self.data_dict[item].reverse()
+		store_data = pd.read_csv(parent_path+"datasets/store_modified.csv",header = None)
+		self.store_dict = {}
+		for _,val in store_data.iterrows():
+			val_list = val.tolist()
+			self.store_dict[val_list[0]] = val_list[1:]
+		self.length = len(self.data_dict[1])
+		self.stores = self.data_dict.keys()
 	   
 
 	def start(self):

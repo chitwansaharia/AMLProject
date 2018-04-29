@@ -29,7 +29,7 @@ def base_model_config():
     config = config_container()
     config.input_size = 28
     config.lstm_units = 200
-    config.num_hidden_layers = 1
+    config.num_hidden_layers = 4
     config.max_time_steps = 20
     config.init_scale = 1.0
     config.max_grad_norm = 5
