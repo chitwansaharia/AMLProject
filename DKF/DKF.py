@@ -7,8 +7,10 @@ import tensorflow as tf
 
 import pdb
 
-tf.set_random_seed(0)
-np.random.seed(0)
+SEED = 100
+
+tf.set_random_seed(SEED)
+np.random.seed(SEED)
 ds = tf.contrib.distributions
 
 class DKF(object):
@@ -196,7 +198,7 @@ class DKF(object):
 		
 		covariance = tf.matmul(cov1, cov2)
 
-		return mean, covariance
+		return mean, cov1
 
 	def custom_gaussian_sampler(self, mean, covariance, n_samples):
 
@@ -206,12 +208,7 @@ class DKF(object):
 		# 	out= i * out
 		# covariance = tf.Print(covariance, [covariance], summarize=out)
 
-		ds = tf.contrib.distributions
-
-		mvg = ds.MultivariateNormalFullCovariance(
-				loc=mean,
-				covariance_matrix=covariance
-			)
+		mvg = DKF.get_mvg(mean, covariance)
 
 		samples = mvg.sample(sample_shape=(n_samples))
 		samples = tf.transpose(samples, perm=(1, 0, 2))
@@ -238,7 +235,7 @@ class DKF(object):
 		# le = int(z.shape[0])
 		# covariance = tf.eye(num_rows=x_size, batch_shape=[le])
 
-		return mean, covariance
+		return mean, cov1
 
 	@staticmethod
 	def get_mvg(mean, covariance):
@@ -248,18 +245,25 @@ class DKF(object):
 		for i in dims:
 			dimt *= i
 		
-		eq = tf.equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))
+		# eq = tf.equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))
 			
-		covariance = tf.Print(
-			covariance, ["cov", eq[2, :, :], covariance[2,:,:], tf.shape(covariance)], summarize=dimt)
+		# covariance = tf.Print(
+			# covariance, ["cov", eq[2, :, :], covariance[2,:,:], tf.shape(covariance)], summarize=dimt)
 		
-		with tf.control_dependencies([tf.assert_equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))]):
+		# with tf.control_dependencies([tf.assert_equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))]):
 
-			return ds.MultivariateNormalFullCovariance(
-					loc=mean,
-					covariance_matrix=covariance
-					# validate_args=True,
-				)
+			# return ds.MultivariateNormalFullCovariance(
+			# 		loc=mean,
+			# 		covariance_matrix=covariance
+			# 		# validate_args=True,
+			# 	)
+
+		return ds.MultivariateNormalTriL(
+			loc=mean,
+			scale_tril=covariance
+			# validate_args=True,
+		)
+	
 		
 	def pdf_value_multivariate_custom(self, mean, covariance, arg):
 
@@ -285,6 +289,8 @@ class DKF(object):
 		mvg2 = DKF.get_mvg(mean2, covar2)
 
 		diverg = tf.distributions.kl_divergence(mvg1, mvg2)
+
+		diverg = tf.Print(diverg, ["KL", diverg])
 		return diverg
 
 	def custom_kl_e2(self, mean1, covar1, mean2, covar2, batch_size):
@@ -323,7 +329,7 @@ class DKF(object):
 		# le = int(in1.shape[0])
 		# covariance = tf.eye(num_rows=z_size, batch_shape=[le])
 
-		return mean, covariance
+		return mean, cov1
 
 	def custom_kl_e3(self, mean1, covar1, mean2, covar2, n_samples, batch_len, time_len):
 		# batch size x time steps-1 x samples = kl of batch size x time steps -1 x z_distr_size and batch size * time steps -1 * N x z_distr_size
@@ -435,8 +441,8 @@ class DKF(object):
 		# batch size 
 		error_term3 = tf.reduce_sum( out_e3, axis=[1] )
 
-		# self.metrics["loss"] = tf.reduce_mean(-error_term3)
-		self.metrics["loss"] = tf.reduce_mean(error_term1-error_term2-error_term3)
+		self.metrics["loss"] = tf.reduce_mean(-error_term1)
+		# self.metrics["loss"] = tf.reduce_mean(error_term1-error_term2-error_term3)
 
 		tf.get_variable_scope().reuse_variables()
 
@@ -506,25 +512,25 @@ class DKF(object):
 		return x
 
 	def compute_gradients_and_train_op(self):
-		tvars = self.tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
+		# tvars = self.tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
 
-		import pprint
-		pprint.PrettyPrinter().pprint(tvars)
+		# import pprint
+		# pprint.PrettyPrinter().pprint(tvars)
 
-		grads = self.grads = tf.gradients(self.metrics["loss"], tvars)
-		# import ipdb; ipdb.set_trace()	
-		optimizer = tf.train.AdamOptimizer(learning_rate=self.config["learning_rate"])
-		self.train_op=optimizer.apply_gradients(
-			zip(grads, tvars),
-			global_step=self.global_step)
+		# grads = self.grads = tf.gradients(self.metrics["loss"], tvars)
+		# # import ipdb; ipdb.set_trace()	
+		# optimizer = tf.train.AdamOptimizer(learning_rate=self.config["learning_rate"])
+		# self.train_op=optimizer.apply_gradients(
+		# 	zip(grads, tvars),
+		# 	global_step=self.global_step)
 
-		# optimizer = tf.train.AdamOptimizer(
-		# 		learning_rate=self.config["learning_rate"]
-		# 	)
-		# self.train_op = optimizer.minimize(
-		# 		loss=self.metrics["loss"],
-		# 		global_step=self.global_step
-		# 	)
+		optimizer = tf.train.AdamOptimizer(
+				learning_rate=self.config["learning_rate"]
+			)
+		self.train_op = optimizer.minimize(
+				loss=self.metrics["loss"],
+				global_step=self.global_step
+			)
 
 	def run_epoch(self, session, reader, validate=True, verbose=False):
 
@@ -535,8 +541,8 @@ class DKF(object):
 
 		if verbose:
 			print("\nTraining...")
-		fetches["vars"] = self.tvars
-		fetches["grads"] = self.grads
+		# fetches["vars"] = self.tvars
+		# fetches["grads"] = self.grads
 		fetches["train_op"] = self.train_op
 
 		i = 0
@@ -555,16 +561,20 @@ class DKF(object):
 			feed_dict[self.x.name] = batch["outputs"]
 			feed_dict[self.u.name] = batch["inputs"]
 
-			vals = session.run(fetches["grads"], feed_dict)
+			print(fetches)
+
+			vals = session.run(fetches, feed_dict)
 
 			i += 1
 			if verbose:
 				import pprint
-				pprint.PrettyPrinter().pprint(
-					# "% Iter Done :", round(i, 0),
-					# "loss :\n", round(vals["loss"]),
+				# pprint.PrettyPrinter().pprint(
+				print(
+					"% Iter Done :", round(i, 0),
+					"loss :", round(vals["loss"]),
 					# "vars: \n",
-					vals
+					# vals
+
 					# "changes: \n", vals["grads"],
 				)
 				print ("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
@@ -584,7 +594,7 @@ class DKF(object):
 		# 	vals = session.run(fetches, feed_dict)
 
 		epoch_metrics["loss"] = vals["loss"]
-		epoch_metrics["validation_error"] = vals["prediction_error"]
+		# epoch_metrics["validation_error"] = vals["prediction_error"]
 		return epoch_metrics
 
 	def run_test(self, session, calc_error=False, verbose=False):
