@@ -34,12 +34,13 @@ class LSTMModel(object):
 		input_size = self.config.input_size
 		self.max_time_steps = self.config.max_time_steps
 		self.batch_size = self.config.batch_size
+		self.output_size = self.config.output_size
 		
 		# input_data placeholders
 		self.inputs = tf.placeholder(
 			tf.float32, shape=[self.batch_size,self.max_time_steps,input_size], name="inputs")
 		self.targets = tf.placeholder(
-			tf.float32, shape=[self.batch_size,self.max_time_steps,2], name="targets")
+			tf.float32, shape=[self.batch_size,self.max_time_steps,self.output_size], name="targets")
 		self.mask = tf.placeholder(
 			tf.float32,shape=[self.batch_size,self.max_time_steps],name = "mask")
 
@@ -87,27 +88,27 @@ class LSTMModel(object):
 		# Embeddings
 
 		with tf.variable_scope("embeddings"):
-			self.store_type_embedding = tf.get_variable("store_type_embedding",[4,50])
-			self.assortment_type_embedding = tf.get_variable("assortment_type_embedding",[3,50])
-			self.competition_open_since_month_embedding = tf.get_variable("competition_open_since_month_embedding",[13,100])
-			self.promo2_embedding = tf.get_variable("promo2_embedding",[2,50])
-			self.promo2_since_year_embedding= tf.get_variable("promo2_since_year_embedding",[8,70])
-			self.promo_interval_embedding = tf.get_variable("promo_interval_embedding",[4,50],dtype=tf.float32)
+			self.store_type_embedding = tf.get_variable("store_type_embedding",[4,4])
+			self.assortment_type_embedding = tf.get_variable("assortment_type_embedding",[3,3])
+			self.competition_open_since_month_embedding = tf.get_variable("competition_open_since_month_embedding",[13,13])
+			self.promo2_embedding = tf.get_variable("promo2_embedding",[2,2])
+			self.promo2_since_year_embedding= tf.get_variable("promo2_since_year_embedding",[8,7])
+			self.promo_interval_embedding = tf.get_variable("promo_interval_embedding",[4,4],dtype=tf.float32)
 			
-			self.comp_dist_weights = tf.get_variable("comp_dist_weights",[1,50],dtype=tf.float32)
-			self.comp_dist_bias = tf.get_variable("comp_dist_bias",[50],dtype=tf.float32)
+			self.comp_dist_weights = tf.get_variable("comp_dist_weights",[1,2],dtype=tf.float32)
+			self.comp_dist_bias = tf.get_variable("comp_dist_bias",[2],dtype=tf.float32)
 
-			self.comp_year_embedding =  tf.get_variable("comp_year_embedding",[29,100],	dtype=tf.float32)
-			self.promo2_week_embedding = tf.get_variable("promo2_week_embedding",[14,100])
+			self.comp_year_embedding =  tf.get_variable("comp_year_embedding",[29,20],	dtype=tf.float32)
+			self.promo2_week_embedding = tf.get_variable("promo2_week_embedding",[14,10])
 			
-			self.day_of_week_embedding = tf.get_variable("day_of_week_embedding",[7,200])
-			self.year_embedding = tf.get_variable("year_embedding",[3,100])
-			self.month_embedding = tf.get_variable("month_embedding",[12,200])
-			self.day_embedding = tf.get_variable("day_embedding",[31,200])
-			self.open_embedding = tf.get_variable("open_embedding",[2,70])
-			self.promo_embedding = tf.get_variable("promo_embedding",[2,70])
-			self.state_holiday_embedding = tf.get_variable("state_holiday_embedding",[4,100])
-			self.school_holiday_embedding = tf.get_variable("school_holiday_embedding",[2,70])
+			self.day_of_week_embedding = tf.get_variable("day_of_week_embedding",[7,7])
+			self.year_embedding = tf.get_variable("year_embedding",[3,3])
+			self.month_embedding = tf.get_variable("month_embedding",[12,12])
+			self.day_embedding = tf.get_variable("day_embedding",[31,20])
+			self.open_embedding = tf.get_variable("open_embedding",[2,2])
+			self.promo_embedding = tf.get_variable("promo_embedding",[2,2])
+			self.state_holiday_embedding = tf.get_variable("state_holiday_embedding",[4,4])
+			self.school_holiday_embedding = tf.get_variable("school_holiday_embedding",[2,2])
 
 
 		processed_inputs = self.process_inputs(self.inputs)
@@ -142,17 +143,18 @@ class LSTMModel(object):
 		with tf.variable_scope("output_layer"):
 			self.model_outputs = tf.contrib.layers.fully_connected(
 					inputs=full_conn_layers[-1],
-					num_outputs=2,
+					num_outputs=self.output_size,
 					activation_fn=None,
 					weights_initializer=rand_uni_initializer,
 					biases_initializer=rand_uni_initializer,
 					trainable=True)
 
 
+
 	def compute_loss_and_metrics(self):
 		temp = tf.multiply(tf.reshape(self.model_outputs,[self.batch_size,self.max_time_steps,-1]),tf.expand_dims(self.mask,-1))
 
-		self.metrics["entropy_loss"] = tf.divide(tf.nn.l2_loss(tf.reshape(temp,[-1,2]) - tf.reshape(self.targets,[-1,2])),tf.reduce_sum(self.mask))
+		self.metrics["entropy_loss"] = tf.divide(tf.nn.l2_loss(tf.reshape(temp,[-1,self.output_size]) - tf.reshape(self.targets,[-1,self.output_size])),tf.reduce_sum(self.mask))
 
 
 	def compute_gradients_and_train_op(self):
@@ -179,7 +181,7 @@ class LSTMModel(object):
 	def run_epoch(self, session,reader, is_training=False, verbose=False):
 		start_time = time.time()
 		epoch_metrics = {}
-		keep_prob = self.config.keep_prob
+		keep_prob = 1
 		fetches = {
 			"entropy_loss": self.metrics["entropy_loss"],
 			"grad_sum": self.metrics["grad_sum"],
@@ -247,7 +249,7 @@ class LSTMModel(object):
 		return total_loss
 
 	def test(self,session,reader):
-		keep_prob = self.config.keep_prob
+		keep_prob = 1
 		final_outputs = []
 		fetches = {
 			"outputs" : self.model_outputs,
@@ -273,7 +275,6 @@ class LSTMModel(object):
 
 			if batch["refresh"] == 1:
 				state = session.run(self.initial_state)
-
 			else:
 				state = vals["final_state"] 
 			reshape_outputs = np.reshape(vals["outputs"],[self.batch_size,self.max_time_steps,-1])
@@ -282,7 +283,7 @@ class LSTMModel(object):
 				for j in range(self.max_time_steps):
 					if batch['mask'][i][j] == 1.0:
 						temp = [batch["stores"][i]]
-						temp.extend(list(batch["inputs"][i][j][20:]))
+						temp.extend(list(batch["inputs"][i][j][9:]))
 						temp.extend([reshape_outputs[i][j][0]])
 						final_outputs.append(temp)
 			batch = reader.next()
