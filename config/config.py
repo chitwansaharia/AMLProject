@@ -54,8 +54,8 @@ def dkf_model_config():
 
     config.latent_state_size = 10
 
-    config.input_size = 28
-    config.output_size = 2
+    config.input_size = 17
+    config.output_size = 1
 
     config.learning_rate = 0.01
     config.keep_prob = 0.7
@@ -63,6 +63,7 @@ def dkf_model_config():
     config.num_hidden_units = 200    
     config.num_hidden_layers = 4
     
+    config.load_mode = "train"    
     return config
 
 def config():

@@ -19,7 +19,7 @@ import csv
 flags = tf.flags
 logging = tf.logging
 
-flags.DEFINE_string("save_path", None,
+flags.DEFINE_string("save_path", "./",
                     "base save path for the experiment")
 flags.DEFINE_string("mode","train","mode in which model needs to run")
 # flags.DEFINE_string("log_path",None,"Log Directory path")
@@ -71,7 +71,7 @@ def main(_):
             iterator_test = data_iter.SSIterator(model_config,mode = "test")
             best_saver.restore(
                 sess=session,
-                save_path=os.path.join(save_path, "best_model.ckpt"))
+                save_path=os.path.join(save_path, "best_model_dkf.ckpt"))
             final_outputs = model.test(session, reader = iterator_test)
             with open("output.csv", "wb") as f:
                 writer = csv.writer(f)
@@ -82,7 +82,7 @@ def main(_):
             if model_config.load_mode == "best":
                  best_saver.restore(
                     sess=session,
-                    save_path=os.path.join(save_path, "best_model.ckpt"))
+                    save_path=os.path.join(save_path, "best_model_dkf.ckpt"))
 
             i, patience = 0, 0
             best_valid_metric = 1e10

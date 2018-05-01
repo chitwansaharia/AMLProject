@@ -32,7 +32,9 @@ class DKF(object):
 		else:
 			tf.device('/cpu:0')
 
-		with tf.variable_scope(self.scope):
+		initializer = tf.random_normal_initializer()
+
+		with tf.variable_scope(self.scope, initializer=initializer):
 			self.build_model()
 		with tf.variable_scope("optimizer"):
 			self.compute_gradients_and_train_op()
@@ -59,47 +61,83 @@ class DKF(object):
 				 )
 
 	def create_embeddings(self):
-		with tf.variable_scope("embeddings"):
-			self.store_type_embedding = tf.get_variable("store_type_embedding",[4,70])
-			self.assortment_type_embedding = tf.get_variable("assortment_type_embedding",[3,70])
-			self.competition_open_since_month_embedding = tf.get_variable("competition_open_since_month_embedding",[13,100])
-			self.promo2_embedding = tf.get_variable("promo2_embedding",[2,50])
-			self.promo2_since_year_embedding= tf.get_variable("promo2_since_year_embedding",[8,70])
-			self.promo_interval_weights = tf.get_variable("promo_interval_weights",[12,100],dtype=tf.float32)
-			self.promo_interval_bias = tf.get_variable("promo_interval_bias",[100],dtype=tf.float32)
 
-			self.day_of_week_embedding = tf.get_variable("day_of_week_embedding",[7,70])
-			self.year_embedding = tf.get_variable("year_embedding",[3,50])
-			self.month_embedding = tf.get_variable("month_embedding",[12,80])
-			self.day_embedding = tf.get_variable("day_embedding",[31,100])
-			self.open_embedding = tf.get_variable("open_embedding",[2,30])
-			self.promo_embedding = tf.get_variable("promo_embedding",[2,30])
-			self.state_holiday_embedding = tf.get_variable("state_holiday_embedding",[4,30])
-			self.school_holiday_embedding = tf.get_variable("school_holiday_embedding",[2,30])
+		with tf.variable_scope("embeddings"):
+			self.store_type_embedding = tf.get_variable("store_type_embedding", [4, 4])
+			self.assortment_type_embedding = tf.get_variable(
+				"assortment_type_embedding", [3, 3])
+			self.competition_open_since_month_embedding = tf.get_variable(
+				"competition_open_since_month_embedding", [13, 13])
+			self.promo2_embedding = tf.get_variable("promo2_embedding", [2, 2])
+			self.promo2_since_year_embedding = tf.get_variable(
+				"promo2_since_year_embedding", [8, 7])
+			self.promo_interval_embedding = tf.get_variable(
+				"promo_interval_embedding", [4, 4], dtype=tf.float32)
+
+			self.comp_dist_weights = tf.get_variable(
+				"comp_dist_weights", [1, 2], dtype=tf.float32)
+			self.comp_dist_bias = tf.get_variable(
+				"comp_dist_bias", [2], dtype=tf.float32)
+
+			self.comp_year_embedding = tf.get_variable(
+				"comp_year_embedding", [29, 20],	dtype=tf.float32)
+			self.promo2_week_embedding = tf.get_variable(
+				"promo2_week_embedding", [14, 10])
+
+			self.day_of_week_embedding = tf.get_variable(
+				"day_of_week_embedding", [7, 7])
+			self.year_embedding = tf.get_variable("year_embedding", [3, 3])
+			self.month_embedding = tf.get_variable("month_embedding", [12, 12])
+			self.day_embedding = tf.get_variable("day_embedding", [31, 20])
+			self.open_embedding = tf.get_variable("open_embedding", [2, 2])
+			self.promo_embedding = tf.get_variable("promo_embedding", [2, 2])
+			self.state_holiday_embedding = tf.get_variable(
+				"state_holiday_embedding", [4, 4])
+			self.school_holiday_embedding = tf.get_variable(
+				"school_holiday_embedding", [2, 2])
 
 	def process_data(self, inputs):
 
 		batch_size = self.config["batch_size"]
 		time_len = self.config["time_len"]
 
-		output = [tf.nn.embedding_lookup(self.store_type_embedding,tf.cast(inputs[:,:,0],dtype= tf.int32))]
-		output.append(tf.nn.embedding_lookup(self.assortment_type_embedding,tf.cast(inputs[:,:,1],dtype= tf.int32)))
-		output.append(inputs[:,:,2:3])
-		output.append(tf.nn.embedding_lookup(self.competition_open_since_month_embedding,tf.cast(inputs[:,:,3],dtype= tf.int32)))
-		output.append(inputs[:,:,4:5])
-		output.append(tf.nn.embedding_lookup(self.promo2_embedding,tf.cast(inputs[:,:,5],dtype= tf.int32)))
-		output.append(inputs[:,:,6:7])
-		output.append(tf.nn.embedding_lookup(self.promo2_since_year_embedding,tf.cast(inputs[:,:,7],dtype= tf.int32)))
-		temp = tf.reshape(inputs[:,:,8:20],[-1,12])
-		output.append(tf.reshape(tf.add(tf.matmul(temp,self.promo_interval_weights),self.promo_interval_bias),[batch_size,time_len,-1]))
-		output.append(tf.nn.embedding_lookup(self.day_of_week_embedding,tf.cast(inputs[:,:,20],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.year_embedding,tf.cast(inputs[:,:,21],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.month_embedding,tf.cast(inputs[:,:,22],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.day_embedding,tf.cast(inputs[:,:,23],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.open_embedding,tf.cast(inputs[:,:,24],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.promo_embedding,tf.cast(inputs[:,:,25],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.state_holiday_embedding,tf.cast(inputs[:,:,26],dtype= tf.int32)))
-		output.append(tf.nn.embedding_lookup(self.school_holiday_embedding,tf.cast(inputs[:,:,27],dtype= tf.int32)))
+		output = [tf.nn.embedding_lookup(
+			self.store_type_embedding, tf.cast(inputs[:, :, 0], dtype=tf.int32))]
+		output.append(tf.nn.embedding_lookup(
+			self.assortment_type_embedding, tf.cast(inputs[:, :, 1], dtype=tf.int32)))
+		temp = tf.reshape(inputs[:, :, 2:3], [-1, 1])
+		output.append(tf.reshape(tf.add(tf.matmul(temp, self.comp_dist_weights),
+                                  self.comp_dist_bias), [batch_size, time_len, -1]))
+		output.append(tf.nn.embedding_lookup(
+			self.competition_open_since_month_embedding, tf.cast(inputs[:, :, 3], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.comp_year_embedding,
+                                       tf.cast(inputs[:, :, 4], dtype=tf.int32)))
+
+		output.append(tf.nn.embedding_lookup(self.promo2_embedding,
+                                       tf.cast(inputs[:, :, 5], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.promo2_week_embedding,
+                                       tf.cast(inputs[:, :, 6], dtype=tf.int32)))
+
+		output.append(tf.nn.embedding_lookup(
+			self.promo2_since_year_embedding, tf.cast(inputs[:, :, 7], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(
+			self.promo_interval_embedding, tf.cast(inputs[:, :, 8], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.day_of_week_embedding,
+                                       tf.cast(inputs[:, :, 9], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.year_embedding,
+                                       tf.cast(inputs[:, :, 10], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.month_embedding,
+                                       tf.cast(inputs[:, :, 11], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.day_embedding,
+                                       tf.cast(inputs[:, :, 12], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.open_embedding,
+                                       tf.cast(inputs[:, :, 13], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(self.promo_embedding,
+                                       tf.cast(inputs[:, :, 14], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(
+			self.state_holiday_embedding, tf.cast(inputs[:, :, 15], dtype=tf.int32)))
+		output.append(tf.nn.embedding_lookup(
+			self.school_holiday_embedding, tf.cast(inputs[:, :, 16], dtype=tf.int32)))
 
 		u = tf.concat(output, axis=2)
 
@@ -153,15 +191,10 @@ class DKF(object):
 		cov1 = tf.reshape(out[:,:,z_size:], shape=(-1, time_len, z_size, z_size))
 		cov2 = tf.transpose(cov1, perm=(0, 1, 3, 2))
 
-		cov1_shaped = tf.reshape( cov1, shape=(-1, z_size, z_size) )
-		cov2_shaped = tf.reshape( cov2, shape=(-1, z_size, z_size) )
-
-		covariance_shaped = tf.matmul(cov1_shaped, cov2_shaped)
-
 		# le = int(cov1.shape[0])
 		# covariance_shaped = tf.eye(z_size, batch_shape=[le, time_len])
-
-		covariance = tf.reshape( covariance_shaped, shape=(-1, time_len, z_size, z_size) )
+		
+		covariance = tf.matmul(cov1, cov2)
 
 		return mean, covariance
 
@@ -207,43 +240,49 @@ class DKF(object):
 
 		return mean, covariance
 
-	def pdf_value_multivariate(self, mean, covariance, arg):
+	@staticmethod
+	def get_mvg(mean, covariance):
+
+		dims = [int(x) for x in covariance.shape]
+		dimt = 1
+		for i in dims:
+			dimt *= i
+		
+		eq = tf.equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))
+			
+		covariance = tf.Print(
+			covariance, ["cov", eq[2, :, :], covariance[2,:,:], tf.shape(covariance)], summarize=dimt)
+		
+		with tf.control_dependencies([tf.assert_equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))]):
+
+			return ds.MultivariateNormalFullCovariance(
+					loc=mean,
+					covariance_matrix=covariance
+					# validate_args=True,
+				)
+		
+	def pdf_value_multivariate_custom(self, mean, covariance, arg):
 
 		# broadcast arg and return prob value
 		arg_size = int(arg.shape[-1])
-		arg_r = tf.reshape(arg, shape=(-1, 1, arg_size))
+		comp_size = int(arg.shape[-2])
 
-		# dims = [ int(x) for x in covariance.shape ]
-		# dimt = 1
-		# for i in dims:
-		# 	dimt *= i
+		arg_r = tf.reshape(arg, shape=(-1, arg_size))
+		mean_r = tf.reshape(mean, shape=(-1, arg_size))
+		covariance_r = tf.reshape(covariance, shape=(-1, arg_size, arg_size))
 
-		# covariance = tf.Print(covariance, [covariance, tf.shape(covariance)], summarize=dimt)
-
-		mvg = ds.MultivariateNormalFullCovariance(
-				loc=mean,
-				covariance_matrix=covariance,
-				validate_args=True
-			)
+		mvg = DKF.get_mvg(mean_r, covariance_r)
 
 		values = mvg.prob(arg_r)
-
+		values = tf.reshape(values, shape=(-1, comp_size))
 		return values
 
 	@staticmethod
 	def kl(mean1, covar1, mean2, covar2):
 
-		mvg1 = ds.MultivariateNormalFullCovariance(
-				loc=mean1,
-				covariance_matrix=covar1,
-				validate_args=True
-			)
+		mvg1 = DKF.get_mvg(mean1, covar1)
 
-		mvg2 = ds.MultivariateNormalFullCovariance(
-				loc=mean2,
-				covariance_matrix=covar2,
-				validate_args=True
-			)
+		mvg2 = DKF.get_mvg(mean2, covar2)
 
 		diverg = tf.distributions.kl_divergence(mvg1, mvg2)
 		return diverg
@@ -350,10 +389,12 @@ class DKF(object):
 		shaped_x_param_mean_e1 = tf.reshape( x_param_mean, shape=(-1, n_samples_term_1, x_size) )
 		shaped_x_param_covar_e1 = tf.reshape( x_param_covar, shape=(-1, n_samples_term_1, x_size, x_size) )
 		# shaped_x_e1 = batch size * time steps x x_size
-		shaped_x_e1 = tf.reshape( self.x, shape=(-1, x_size) )
+		shaped_x_e1 = tf.reshape(self.x, shape=(-1, x_size))
+		shaped_x_broadcasted_e1 = tf.reshape(shaped_x_e1, shape=(-1, 1, x_size)) + np.zeros(
+			shape=(batch_size*time_len, n_samples_term_1, x_size))
 		# error term 1 
 		# batch size * time steps x N
-		out1 = tf.log( self.pdf_value_multivariate ( shaped_x_param_mean_e1, shaped_x_param_covar_e1, shaped_x_e1 ) )
+		out1 = tf.log( self.pdf_value_multivariate_custom ( shaped_x_param_mean_e1, shaped_x_param_covar_e1, shaped_x_broadcasted_e1 ) )
 
 		expectation_out1 = tf.reduce_mean(out1, axis=[1])
 		# batch size 
@@ -465,24 +506,25 @@ class DKF(object):
 		return x
 
 	def compute_gradients_and_train_op(self):
-		# tvars = self.tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
+		tvars = self.tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
 
-		# tf.get_variable_scope().reuse_variables()
+		import pprint
+		pprint.PrettyPrinter().pprint(tvars)
 
-		# grads = tf.gradients(self.metrics["loss"], tvars)
-		# # import ipdb; ipdb.set_trace()	
-		# optimizer = tf.train.AdamOptimizer(learning_rate=self.config["learning_rate"])
-		# self.train_op=optimizer.apply_gradients(
-		# 	zip(grads, tvars),
-		# 	global_step=self.global_step)
+		grads = self.grads = tf.gradients(self.metrics["loss"], tvars)
+		# import ipdb; ipdb.set_trace()	
+		optimizer = tf.train.AdamOptimizer(learning_rate=self.config["learning_rate"])
+		self.train_op=optimizer.apply_gradients(
+			zip(grads, tvars),
+			global_step=self.global_step)
 
-		optimizer = tf.train.AdamOptimizer(
-				learning_rate=self.config["learning_rate"]
-			)
-		self.train_op = optimizer.minimize(
-				loss=self.metrics["loss"],
-				global_step=self.global_step
-			)
+		# optimizer = tf.train.AdamOptimizer(
+		# 		learning_rate=self.config["learning_rate"]
+		# 	)
+		# self.train_op = optimizer.minimize(
+		# 		loss=self.metrics["loss"],
+		# 		global_step=self.global_step
+		# 	)
 
 	def run_epoch(self, session, reader, validate=True, verbose=False):
 
@@ -493,6 +535,8 @@ class DKF(object):
 
 		if verbose:
 			print("\nTraining...")
+		fetches["vars"] = self.tvars
+		fetches["grads"] = self.grads
 		fetches["train_op"] = self.train_op
 
 		i = 0
@@ -505,19 +549,23 @@ class DKF(object):
 
 		batch = reader.next()
 
-		while batch != None:
+		while batch != None and i < 1:
 
 			feed_dict = {}
 			feed_dict[self.x.name] = batch["outputs"]
 			feed_dict[self.u.name] = batch["inputs"]
 
-			vals = session.run(fetches, feed_dict)
+			vals = session.run(fetches["grads"], feed_dict)
 
 			i += 1
 			if verbose:
-				print(
-					"% Iter Done :", round(i, 0),
-					"loss :", round(vals["loss"]),
+				import pprint
+				pprint.PrettyPrinter().pprint(
+					# "% Iter Done :", round(i, 0),
+					# "loss :\n", round(vals["loss"]),
+					# "vars: \n",
+					vals
+					# "changes: \n", vals["grads"],
 				)
 				print ("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
 
