@@ -41,10 +41,33 @@ def base_model_config():
     config.output_size = 1
     return config
 
+def dkf_model_config():
+    config = base_model_config()
+
+    config.batch_size = 20
+    config.max_time_steps = 20
+
+    config.nsamples_e1 = 50
+    config.nsamples_e3 = 50
+    config.lsm_time = 10
+
+    config.latent_state_size = 10
+
+    config.input_size = 28
+    config.output_size = 2
+
+    config.learning_rate = 0.01
+    config.keep_prob = 0.7
+
+    config.num_hidden_units = 200    
+    config.num_hidden_layers = 4
+    
+    return config
 
 def config():
     config = config_container()
     config.base_model_config = base_model_config() 
+    config.dkf_model_config = dkf_model_config() 
     return config
 
 
