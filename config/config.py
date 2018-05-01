@@ -28,16 +28,17 @@ class config_container(object):
 def base_model_config():
     config = config_container()
     config.input_size = 17
-    config.lstm_units = 300
-    config.num_hidden_layers = 4
+    config.lstm_units = 128
+    config.num_hidden_layers = 3
     config.max_time_steps = 20
     config.init_scale = 1.0
     config.max_grad_norm = 5
-    config.learning_rate = 0.01
-    config.keep_prob = 0.8
+    config.learning_rate = 0.005
+    config.keep_prob = 0.7
     config.batch_size = 20
-    config.load_mode = "fresh"
+    config.load_mode = "best"
     config.patience = 3
+    config.output_size = 1
     return config
 
 

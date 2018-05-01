@@ -13,7 +13,7 @@ import pandas as pd
 
 parent_path = __file__.split((os.path.basename(__file__)))[0]
 
-output_dim = 2
+output_dim = 1
 
 discontinue_index = 122
 
@@ -53,7 +53,7 @@ class SSFetcher(threading.Thread):
 						for t_index in range(diter.max_time_steps):
 							data_item = diter.data_dict[present_batch[b_index]][time_steps_done+t_index]
 							X_batch[b_index,t_index,:] = diter.store_dict[present_batch[b_index]] + data_item[:-2]
-							Y_batch[b_index,t_index,:] = data_item[-2:]
+							Y_batch[b_index,t_index,:] = data_item[-2:-1]
 							mask[b_index,t_index] = 1.0
 							if time_steps_done + t_index == diter.length-1:
 								batch_set = False
@@ -95,7 +95,7 @@ class SSFetcher(threading.Thread):
 						for t_index in range(diter.max_time_steps):
 							data_item = diter.data_dict[present_batch[b_index]][time_steps_done+t_index]
 							X_batch[b_index,t_index,:] = diter.store_dict[present_batch[b_index]] + data_item[:-2]
-							Y_batch[b_index,t_index,:] = data_item[-2:]
+							Y_batch[b_index,t_index,:] = data_item[-2:-1]
 							mask[b_index,t_index] = 1.0
 							if time_steps_done + t_index == diter.long_length-1:
 								batch_set = False
@@ -133,7 +133,7 @@ class SSFetcher(threading.Thread):
 						for t_index in range(diter.max_time_steps):
 							data_item = diter.data_dict[present_batch[b_index]][time_steps_done+t_index]
 							X_batch[b_index,t_index,:] = diter.store_dict[present_batch[b_index]] + data_item[:-2]
-							Y_batch[b_index,t_index,:] = data_item[-2:]
+							Y_batch[b_index,t_index,:] = data_item[-2:-1]
 							mask[b_index,t_index] = 1.0
 							if time_steps_done + t_index == diter.short_length-1:
 								batch_set = False
@@ -236,7 +236,7 @@ class SSIterator(object):
 		for _,val in store_data.iterrows():
 			val_list = val.tolist()
 			self.store_dict[val_list[0]] = val_list[1:]
-	   
+	    
 		self.long_length = len(self.data_dict[self.long_stores[0]])
 		self.short_length = len(self.data_dict[self.short_stores[0]])
 

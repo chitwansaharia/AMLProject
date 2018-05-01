@@ -66,13 +66,14 @@ def main(_):
 
                     
                 while patience < model_config.patience:
+                    
                     i += 1
+                    print("\nEpoch: %d" % (i))
 
                     iterator_train = data_iter.SSIterator(model_config,mode = "train")
                     iterator_valid = data_iter.SSIterator(model_config,mode = "valid")
 
                     
-                    print("\nEpoch: %d" % (i))
                     model.run_epoch(session, reader = iterator_train, is_training=True, verbose=True)
 
                     valid_loss = model.run_epoch(session, reader = iterator_valid, verbose=True)
@@ -86,6 +87,7 @@ def main(_):
                     else:
                         patience += 1
                         print("\nLosing patience...")
+
 
 if __name__ == "__main__":
     tf.app.run()
