@@ -33,12 +33,13 @@ def base_model_config():
     config.max_time_steps = 20
     config.init_scale = 1.0
     config.max_grad_norm = 5
-    config.learning_rate = 0.005
+    config.learning_rate = 0.01
     config.keep_prob = 0.7
-    config.batch_size = 20
-    config.load_mode = "best"
+    config.batch_size = 25
+    config.load_mode = "fresh"
     config.patience = 3
     config.output_size = 1
+    config.forced_size = 5
     return config
 
 def dkf_model_config():

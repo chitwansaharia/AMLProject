@@ -168,8 +168,10 @@ class SSFetcher(threading.Thread):
 				while batch_set:
 					X_batch = np.zeros((diter.batch_size,diter.max_time_steps,diter.config.input_size),dtype=np.float32)
 					mask = np.zeros((diter.batch_size,diter.max_time_steps))
+					init_mat = np.zeros((diter.batch_size,output_dim))
 					refresh = 0
 					for b_index in range(min(diter.batch_size,len(present_batch))):
+						init_mat[b_index] = diter.init_dict[present_batch[b_index]]
 						for t_index in range(diter.max_time_steps):
 							data_item = diter.data_dict[present_batch[b_index]][time_steps_done+t_index]
 							X_batch[b_index,t_index,:] = diter.store_dict[present_batch[b_index]] + data_item
@@ -184,6 +186,7 @@ class SSFetcher(threading.Thread):
 					batch['refresh'] = refresh
 					batch['stores'] = present_batch
 					batch['mask'] = mask
+					batch["init_feed"] = init_mat 
 					refresh = 0
 					diter.queue.put(batch)
 			diter.queue.put(None)
@@ -282,6 +285,23 @@ class SSIterator(object):
 			self.store_dict[val_list[0]] = val_list[1:]
 		self.length = len(self.data_dict[1])
 		self.stores = self.data_dict.keys()
+		self.init_dict = self.process_valid()
+
+	def process_valid(self):
+		config = self.config
+		data = pd.read_csv(parent_path+"datasets/val_modified.csv",header=None)
+		data_dict = {}
+		for _,val in data.iterrows():
+			val_list = val.tolist()
+			val_list[1] -= 1
+			try:
+				data_dict[val_list[0]].append(val_list[1:])
+			except KeyError:
+				data_dict[val_list[0]] = [val_list[1:]]
+		temp_dict = {}
+		for store in self.stores:
+			temp_dict[store] = data_dict[store][0][-2]
+		return temp_dict 
 	   
 
 	def start(self):

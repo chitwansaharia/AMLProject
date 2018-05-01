@@ -1,9 +1,6 @@
 import pandas as pd
 import csv
-<<<<<<< HEAD
 from numpy import random
-=======
->>>>>>> 9a4837f7dd2d517d0de2a502b8ca4008583c15eb
 import numpy as np
 test_data = pd.read_csv('data/datasets/test_modified.csv',header = None)
 train = pd.read_csv('data/train.csv')
@@ -32,6 +29,7 @@ for _,val in outputs.iterrows():
 
 temp = map(list,finaldict.items())
 temp.insert(0, ["Id","Sales"])
+
 
 with open("submission.csv", "wb") as f:
     writer = csv.writer(f)

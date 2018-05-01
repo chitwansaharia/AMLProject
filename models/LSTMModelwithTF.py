@@ -45,10 +45,15 @@ class LSTMModel(object):
 			tf.float32, shape=[self.batch_size,self.max_time_steps,self.output_size], name="targets")
 		self.mask = tf.placeholder(
 			tf.float32,shape=[self.batch_size,self.max_time_steps],name = "mask")
-		self.initial_force = tf.placeholder(tf.float32,shape=[self.batch_size,self.lstm_units],name="initial_force")
 
 		self.keep_prob = tf.placeholder(tf.float32, name="keep_prob")
 		self.phase_train = tf.placeholder(tf.bool, name="phase_train")
+		self.phase_test = tf.placeholder(tf.bool, name="phase_test")
+		self.sample_weight = tf.placeholder(tf.float32,shape=[], name="sample_weight")
+
+
+		self.initial_force = tf.placeholder(tf.float32,shape=[self.batch_size,self.output_size],name="initial_force")
+
 
 	def process_inputs(self,inputs):
 		output = [tf.nn.embedding_lookup(self.store_type_embedding,tf.cast(inputs[:,:,0],dtype= tf.int32))]
@@ -131,39 +136,56 @@ class LSTMModel(object):
 
 		
 		# outputs,state = tf.nn.dynamic_rnn(cells,processed_inputs,initial_state=rnn_initial_state,dtype=tf.float32)
-		cell_output = self.initial_force		
+		forced_input = self.initial_force		
 		outputs = []
 		with tf.variable_scope("lstm", initializer=rand_uni_initializer):
 			for time_step in range(self.max_time_steps):
 				if time_step > 0:
 					tf.get_variable_scope().reuse_variables()
+
+					forced_input = tf.cond(self.phase_test,
+											lambda: output,
+											lambda: tf.scalar_mul(self.sample_weight,self.targets[:,time_step-1,:]) + tf.scalar_mul(tf.constant(1,dtype=tf.float32)-self.sample_weight,output))
+
 				forced_output = tf.contrib.layers.fully_connected(
-					inputs=cell_output,
+					inputs=forced_input,
 					num_outputs=self.forced_size,
 					activation_fn=None,
 					weights_initializer=rand_uni_initializer,
 					biases_initializer=rand_uni_initializer,
 					trainable=True,
 					reuse=tf.AUTO_REUSE,
-					scope="fully_connected_forced")
+					scope="forced_output_layer")
+
 				present_inputs = tf.concat([processed_inputs[:,time_step,:],forced_output],axis=1)
+				
 				(cell_output, state) = cells(present_inputs, state)
-				outputs.append(cell_output)
-		self.final_output = cell_output
-
-		self.metrics["final_state"] = state
-
-		full_conn_layers = [tf.reshape(tf.concat(axis=1, values=outputs), [-1, lstm_units])]
-		with tf.variable_scope("output_layer"):
-			self.model_outputs = tf.contrib.layers.fully_connected(
-					inputs=full_conn_layers[-1],
+				
+				output = tf.contrib.layers.fully_connected(
+					inputs=cell_output,
 					num_outputs=self.output_size,
 					activation_fn=None,
 					weights_initializer=rand_uni_initializer,
 					biases_initializer=rand_uni_initializer,
-					trainable=True)
+					trainable=True,
+					reuse=tf.AUTO_REUSE,
+					scope="output_layer")
 
+				outputs.append(output)
+		self.final_output = output
 
+		self.metrics["final_state"] = state
+
+		# full_conn_layers = [tf.reshape(tf.concat(axis=1, values=outputs), [-1, lstm_units])]
+		# with tf.variable_scope("output_layer"):
+		# 	self.model_outputs = tf.contrib.layers.fully_connected(
+		# 			inputs=full_conn_layers[-1],
+		# 			num_outputs=self.output_size,
+		# 			activation_fn=None,
+		# 			weights_initializer=rand_uni_initializer,
+		# 			biases_initializer=rand_uni_initializer,
+		# 			trainable=True)
+		self.model_outputs = tf.stack(outputs,axis=1)
 
 	def compute_loss_and_metrics(self):
 		temp = tf.multiply(tf.reshape(self.model_outputs,[self.batch_size,self.max_time_steps,-1]),tf.expand_dims(self.mask,-1))
@@ -195,6 +217,7 @@ class LSTMModel(object):
 		start_time = time.time()
 		epoch_metrics = {}
 		keep_prob = 1
+		phase_test = False
 		fetches = {
 			"entropy_loss": self.metrics["entropy_loss"],
 			"grad_sum": self.metrics["grad_sum"],
@@ -211,6 +234,7 @@ class LSTMModel(object):
 			phase_train = False
 			if verbose:
 				print("\nEvaluating...")
+			phase_test = True
 
 
 		state = session.run(self.initial_state)
@@ -223,7 +247,7 @@ class LSTMModel(object):
 
 		i = 0
 		batch = reader.next()
-		feed_to_initial = np.zeros((self.batch_size,self.lstm_units))
+		feed_to_initial = np.zeros((self.batch_size,self.output_size))
 		while batch != None:        
 			feed_dict = {}
 			feed_dict[self.targets.name] = batch["outputs"]
@@ -231,7 +255,10 @@ class LSTMModel(object):
 			feed_dict[self.keep_prob.name] = keep_prob
 			feed_dict[self.phase_train.name] = phase_train
 			feed_dict[self.mask.name] = batch["mask"]
-			feed_dict[self.initial_force] = feed_to_initial
+			feed_dict[self.initial_force.name] = feed_to_initial
+			feed_dict[self.phase_test.name] = phase_test
+			feed_dict[self.sample_weight.name] = 0.4
+
 
 			
 			feed_dict[self.initial_state] = state
@@ -240,11 +267,11 @@ class LSTMModel(object):
 
 			if batch["refresh"] == 1:
 				state = session.run(self.initial_state)
-				feed_to_initial = np.zeros((self.batch_size,self.lstm_units))
+				feed_to_initial = np.zeros((self.batch_size,self.output_size))
 
 			else:
 				state = vals["final_state"] 
-				feed_to_initial = vals["final_output"]
+				feed_to_initial = batch["outputs"][:,-1,:]
 
 
 			total_loss += vals["entropy_loss"]
@@ -282,27 +309,28 @@ class LSTMModel(object):
 
 		i = 0
 		batch = reader.next()
-		feed_to_initial = np.zeros((self.batch_size,self.lstm_units))
+		feed_to_initial = batch["init_feed"]
 		while batch != None:        
 			feed_dict = {}
 			feed_dict[self.inputs.name] = batch["inputs"]
 			feed_dict[self.keep_prob.name] = keep_prob
 			feed_dict[self.phase_train.name] = phase_train
 			feed_dict[self.initial_force] = feed_to_initial
-
-			
-			
+			feed_dict[self.phase_test] = True
+			feed_dict[self.sample_weight.name] = 0.5
+			feed_dict[self.targets.name] = np.zeros((self.batch_size,self.max_time_steps,self.output_size))			
 			feed_dict[self.initial_state] = state
+
 
 			vals = session.run(fetches, feed_dict)
 
 			if batch["refresh"] == 1:
 				state = session.run(self.initial_state)
-				feed_to_initial = np.zeros((self.batch_size,self.lstm_units))
-			
 			else:
 				state = vals["final_state"] 
 				feed_to_initial = vals["final_output"]
+
+
 
 
 			reshape_outputs = np.reshape(vals["outputs"],[self.batch_size,self.max_time_steps,-1])
@@ -314,8 +342,12 @@ class LSTMModel(object):
 						temp.extend(list(batch["inputs"][i][j][9:]))
 						temp.extend([reshape_outputs[i][j][0]])
 						final_outputs.append(temp)
-					
-			batch = reader.next()
+			if batch["refresh"] == 1:
+				batch = reader.next()
+				if batch != None:
+					feed_to_initial = batch["init_feed"]
+			else:
+				batch = reader.next()
 
 		return final_outputs
 
@@ -340,13 +372,16 @@ class LSTMModel(object):
 		i = 0
 		batch = reader.next()
 		final_val,final_count = 0.0,0.0
-		feed_to_initial = np.zeros((self.batch_size,self.lstm_units))
+		feed_to_initial = np.zeros((self.batch_size,self.output_size))
 		while batch != None:        
 			feed_dict = {}
+			feed_dict[self.phase_test] = True
 			feed_dict[self.inputs.name] = batch["inputs"]
 			feed_dict[self.keep_prob.name] = keep_prob
 			feed_dict[self.phase_train.name] = phase_train
-			feed_dict[self.initial_force] = feed_to_initial			
+			feed_dict[self.initial_force] = feed_to_initial	
+			feed_dict[self.targets.name] = np.zeros((self.batch_size,self.max_time_steps,self.output_size))
+			feed_dict[self.sample_weight.name] = 0.5
 			
 			
 			feed_dict[self.initial_state] = state
@@ -355,7 +390,7 @@ class LSTMModel(object):
 
 			if batch["refresh"] == 1:
 				state = session.run(self.initial_state)
-				feed_to_initial = np.zeros((self.batch_size,self.lstm_units))
+				feed_to_initial = np.zeros((self.batch_size,self.output_size))
 
 			else:
 				state = vals["final_state"] 

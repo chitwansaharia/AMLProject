@@ -10,6 +10,8 @@ import tensorflow as tf
 import sys
 import os
 from models import LSTMModel
+from models import LSTMModelwithTF
+
 from data import data_iter
 from config import config
 import pdb
@@ -37,7 +39,7 @@ def main(_):
     # log_path = os.path.join(FLAGS.log_path)
 
     with tf.Graph().as_default():
-        model = LSTMModel.LSTMModel(model_config)
+        model = LSTMModelwithTF.LSTMModel(model_config)
         best_saver = tf.train.Saver()
 
         with tf.Session() as session:
@@ -72,14 +74,21 @@ def main(_):
 
                     iterator_train = data_iter.SSIterator(model_config,mode = "train")
                     iterator_valid = data_iter.SSIterator(model_config,mode = "valid")
+                    print("Calculating Normal Loss")
 
                     
-                    model.run_epoch(session, reader = iterator_train, is_training=True, verbose=True)
+                    train_loss = model.run_epoch(session, reader = iterator_train, is_training=True, verbose=True)
+                    print(train_loss[0]/train_loss[1])
 
                     valid_loss = model.run_epoch(session, reader = iterator_valid, verbose=True)
+                    print(valid_loss[0]/valid_loss[1])
 
-                    if valid_loss < best_valid_metric:
-                        best_valid_metric = valid_loss
+                    print("Calculating RMS")
+                    valid_rms = model.calc_rms(session, reader = iterator_valid)
+                    print(valid_rms)
+
+                    if valid_loss[0] < best_valid_metric:
+                        best_valid_metric = valid_loss[0]
 
                         print("\nsaving best model...")
                         best_saver.save(sess=session, save_path=os.path.join(save_path, "best_model.ckpt"))
