@@ -238,7 +238,7 @@ class DKF(object):
 
 		return mean, cov1
 
-	def custom_gaussian_sampler(self, mean, covariance, n_samples):
+	def custom_gaussian_sampler(self, mean, covariance, n_samples, covar_is_diag=False):
 
 		# dims = [ int(x) for x in covariance.shape ]
 		# out = 1
@@ -246,7 +246,7 @@ class DKF(object):
 		# 	out= i * out
 		# covariance = tf.Print(covariance, [covariance], summarize=out)
 
-		mvg = DKF.get_mvg(mean, covariance)
+		mvg = DKF.get_mvg(mean, covariance, covar_is_diag=covar_is_diag)
 
 		samples = mvg.sample(sample_shape=(n_samples))
 		samples = tf.transpose(samples, perm=(1, 0, 2))
@@ -276,7 +276,7 @@ class DKF(object):
 		return mean, cov1
 
 	@staticmethod
-	def get_mvg(mean, covariance, stri=None):
+	def get_mvg(mean, covariance, stri=None, covar_is_diag=False):
 
 		dims = [int(x) for x in covariance.shape]
 		dimt = 1
@@ -284,7 +284,7 @@ class DKF(object):
 			dimt *= i
 		
 		covariance = tf.Print(
-			covariance, ["Covariance" + str(stri), covariance])
+			covariance, ["Covariance " + str(stri), covariance])
 		
 		# with tf.control_dependencies([tf.assert_equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))]):
 
@@ -294,11 +294,19 @@ class DKF(object):
 			# 		# validate_args=True,
 			# 	)
 
-		return ds.MultivariateNormalTriL(
-			loc=mean,
-			scale_tril=covariance
-			# validate_args=True,
-		)
+		if not covar_is_diag:
+			return ds.MultivariateNormalTriL(
+				loc=mean,
+				scale_tril=covariance
+				# validate_args=True,
+			)
+		else:
+			return ds.MultivariateNormalDiag(
+				loc=mean,
+				scale_diag=covariance
+				# validate_args=True,
+			)
+
 	
 		
 	def pdf_value_multivariate_custom(self, mean, covariance, arg):
@@ -386,11 +394,11 @@ class DKF(object):
 			
 			return kl_div
 
-	def kl(self, mean1, covar1, mean2, covar2):
+	def kl(self, mean1, covar1, mean2, covar2, covar2_is_diag=False):
 
 		mvg1 = DKF.get_mvg(mean1, covar1)
 
-		mvg2 = DKF.get_mvg(mean2, covar2)
+		mvg2 = DKF.get_mvg(mean2, covar2, covar_is_diag=covar2_is_diag)
 
 		# diverg = tf.distributions.kl_divergence(mvg1, mvg2)
 		diverg = self.kl_divergence(mvg1, mvg2)
@@ -421,15 +429,15 @@ class DKF(object):
 		in1 = tf.concat([z, u], axis=1)
 
 		with tf.variable_scope("transition_model/layer1"):
-			w = tf.get_variable("weight", shape=(z_size + u_size, z_distr_params_size))
-			b = tf.get_variable("bias", shape=(z_distr_params_size))
+			w = tf.get_variable("weight", shape=(z_size + u_size, z_size + z_size))
+			b = tf.get_variable("bias", shape=(z_size + z_size))
 
 		out = tf.matmul(in1, w) + b
 
 		mean = out[:,:z_size]
-		cov1 = tf.reshape(out[:,z_size:], shape=(-1, z_size, z_size))
-		cov2 = tf.transpose(cov1, perm=(0, 2, 1))
-		covariance = tf.matmul(cov1, cov2)
+		cov1 = tf.reshape(out[:,z_size:], shape=(-1, z_size))
+		# cov2 = tf.transpose(cov1, perm=(0, 2, 1))
+		# covariance = tf.matmul(cov1, cov2)
 
 		# le = int(in1.shape[0])
 		# covariance = tf.eye(num_rows=z_size, batch_shape=[le])
@@ -438,6 +446,7 @@ class DKF(object):
 
 	def custom_kl_e3(self, mean1, covar1, mean2, covar2, n_samples, batch_len, time_len):
 		# batch size x time steps-1 x samples = kl of batch size x time steps -1 x z_distr_size and batch size * time steps -1 * N x z_distr_size
+		# covar 2 is not cholesky matrix but the covariance matrix itself
 
 		z_size = self.config["z_size"]
 
@@ -450,14 +459,15 @@ class DKF(object):
 		# self.variable_print_append(mean1)
 		# self.variable_print_append(covar1)
 
+		# COVAR2 IS DIAGONAL!
 		mean2 = tf.reshape( mean2, shape=(-1, z_size) )
-		covar2 = tf.reshape( covar2, shape=(-1, z_size, z_size) )
+		covar2 = tf.reshape( covar2, shape=(-1, z_size) )
 		# self.variable_print_append(mean2)
 		# self.variable_print_append(covar2)
 
 
 		# batch_len x time len x samples
-		prob_values = tf.reshape(self.kl(mean1, covar1, mean2, covar2), shape=(batch_len, time_len, n_samples))
+		prob_values = tf.reshape(self.kl(mean1, covar1, mean2, covar2, covar2_is_diag=True), shape=(batch_len, time_len, n_samples))
 		# self.variable_print_append(prob_values)
 
 		return prob_values
@@ -593,8 +603,8 @@ class DKF(object):
 		# batch size 
 		error_term3 = tf.reduce_sum( out_e3, axis=[1] )
 
-		self.metrics["loss"] = tf.reduce_mean(error_term3)
-		# self.metrics["loss"] = tf.reduce_mean(error_term1-error_term2-error_term3)
+		# self.metrics["loss"] = tf.reduce_mean(error_term3)
+		self.metrics["loss"] = -tf.reduce_mean(error_term1-error_term2-error_term3)
 
 		tf.get_variable_scope().reuse_variables()
 
@@ -653,7 +663,7 @@ class DKF(object):
 			mean_l, covar_l = self.transition_model( curr_z, curr_u )
 
 			# sample
-			curr_z = tf.reshape( self.custom_gaussian_sampler(mean_l, covar_l, 1), shape=(-1, z_size) )
+			curr_z = tf.reshape( self.custom_gaussian_sampler(mean_l, covar_l, 1, covar_is_diag=True), shape=(-1, z_size) )
 
 			# generate distr
 			mean_x, covar_x = self.generation_model( curr_z )
@@ -712,9 +722,9 @@ class DKF(object):
 			print("\nTraining...")
 		
 
-		for var in self.variable_print:
-			fetches[var.name] = var
-		fetches["grads"] = self.grads
+		# for var in self.variable_print:
+			# fetches[var.name] = var
+		# fetches["grads"] = self.grads
 		# fetches["grads1"] = self.grads1
 		if not validate:
 			fetches["train_op"] = self.train_op
@@ -743,7 +753,7 @@ class DKF(object):
 					"% Iter Done :", round(i, 0),
 					"loss :", round(vals["loss"]),
 				)
-				print(vals["grads"])
+				# print(vals["grads"])
 				# print(vals["grads1"])
 				# print ("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
 				# print ("Grads")

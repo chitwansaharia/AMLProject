@@ -57,7 +57,7 @@ def dkf_model_config():
     config.input_size = 17
     config.output_size = 1
 
-    config.learning_rate = 0.0
+    config.learning_rate = 0.1
     config.keep_prob = 0.7
 
     config.num_hidden_units = 200    
