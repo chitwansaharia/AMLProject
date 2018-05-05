@@ -54,7 +54,8 @@ def main(_):
         "n_samples_term_3" : model_config.nsamples_e3,
         "lsm_time" : model_config.lsm_time,
 
-        "learning_rate" : model_config.learning_rate
+        "learning_rate" : model_config.learning_rate,
+        "logfolder": model_config.logfolder
     }
 
     save_path = os.path.join(FLAGS.save_path)

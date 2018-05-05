@@ -62,6 +62,8 @@ def dkf_model_config():
 
     config.num_hidden_units = 200    
     config.num_hidden_layers = 4
+
+    config.logfolder = "log/"
     
     config.load_mode = "train"    
     return config

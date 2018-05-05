@@ -17,7 +17,7 @@ class DKF(object):
 
 
 	def __init__(self, config = None, scope_name=None, device='gpu'):
-
+		self.variable_print = []
 		self.config = config
 		self.config["x_distr_params_size"] = self.config["x_size"] + self.config["x_size"] * self.config["x_size"]
 		self.config["z_distr_params_size"] = self.config["z_size"] + self.config["z_size"] * self.config["z_size"]
@@ -40,6 +40,20 @@ class DKF(object):
 			self.build_model()
 		with tf.variable_scope("optimizer"):
 			self.compute_gradients_and_train_op()
+
+	@staticmethod
+	def variable_summaries(var):
+		"""Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+		with tf.name_scope('summaries'):
+			mean = tf.reduce_mean(var)
+			tf.summary.scalar('mean', mean)
+			with tf.name_scope('stddev'):
+				stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+				tf.summary.scalar('stddev', stddev)
+			tf.summary.scalar('max', tf.reduce_max(var))
+			tf.summary.scalar('min', tf.reduce_min(var))
+			tf.summary.tensor_summary('val', var)
+
 
 	def create_placeholders(self):
 		# get input dimensions
@@ -379,28 +393,46 @@ class DKF(object):
 		# batch size x time steps x z_distr_params_size ((mean, log of variance))
 		z_param_mean, z_param_covar = self.recognition_model(self.x, embed_u)
 
+
 		# reshaping into batch size * timesteps x z_distr_params_size for generality
 		z_param_mean_shaped = tf.reshape( z_param_mean, shape=(-1, z_size) )
 		z_param_covar_shaped = tf.reshape( z_param_covar, shape=(-1, z_size, z_size) )
+		
+		self.variable_print.append(z_param_mean_shaped)
+		self.variable_print.append(z_param_covar_shaped)
+
+		# z_param_mean_shaped = tf.Print(z_param_mean_shaped, [z_param_mean_shaped], summarize=batch_size * time_len * int(z_param_mean_shaped.shape[1]))
+		# z_param_covar_shaped = tf.Print(z_param_covar_shaped, [z_param_covar_shaped], summarize=batch_size * time_len * int(z_param_covar_shaped.shape[1]) * int(z_param_covar_shaped.shape[2]))
+
 		# batch size * time steps x N samples x z_size
 		samples_z = self.custom_gaussian_sampler( z_param_mean_shaped, z_param_covar_shaped, n_samples_term_1)
 		# shaping samples into batch size * time steps * N x z_size
 		samples_z_shaped = tf.reshape( samples_z, shape=(-1, z_size) )
 
+		self.variable_print.append(samples_z_shaped)
+
 		# batch size * time steps * N x x_distr_params_size (mean, log of variance)
 		x_param_mean, x_param_covar = self.generation_model( samples_z_shaped )
+		
+
 
 		# x_param = batch size * time steps * N x x_distr_params_size
 		# shaped_x_param_e1 = batch size * time steps x N x x_size
 		shaped_x_param_mean_e1 = tf.reshape( x_param_mean, shape=(-1, n_samples_term_1, x_size) )
 		shaped_x_param_covar_e1 = tf.reshape( x_param_covar, shape=(-1, n_samples_term_1, x_size, x_size) )
+
+		self.variable_print.append(shaped_x_param_mean_e1)
+		self.variable_print.append(shaped_x_param_covar_e1)
+
 		# shaped_x_e1 = batch size * time steps x x_size
 		shaped_x_e1 = tf.reshape(self.x, shape=(-1, x_size))
 		shaped_x_broadcasted_e1 = tf.reshape(shaped_x_e1, shape=(-1, 1, x_size)) + np.zeros(
 			shape=(batch_size*time_len, n_samples_term_1, x_size))
 		# error term 1 
 		# batch size * time steps x N
-		out1 = tf.log( self.pdf_value_multivariate_custom ( shaped_x_param_mean_e1, shaped_x_param_covar_e1, shaped_x_broadcasted_e1 ) )
+		out1 = tf.log( self.pdf_value_multivariate_custom ( shaped_x_param_mean_e1, shaped_x_param_covar_e1, shaped_x_broadcasted_e1 ) + tf.constant(1e-8))
+
+		self.variable_print.append(out1)
 
 		expectation_out1 = tf.reduce_mean(out1, axis=[1])
 		# batch size 
@@ -413,9 +445,11 @@ class DKF(object):
 		# batch size x time steps-1 (t = 0:max-1) x 2 (mean, log variance)
 		z_param_mean_0_t_1, z_param_covar_0_t_1 = z_param_mean[:,:-1,:], z_param_covar[:,:-1,:,:]
 
+
 		# batch size
 		error_term2 = self.custom_kl_e2( z_param_mean_0, z_param_covar_0, z1_prior_mean, z1_prior_covar, batch_size)
 
+		self.variable_print.append(error_term2)
 
 		# reshaping into batch size * timesteps-1 x z_distr_params_size for generality
 		z_param_mean_0_t_1_shaped = tf.reshape( z_param_mean_0_t_1, shape=(-1, z_size) )
@@ -461,6 +495,9 @@ class DKF(object):
 
 		# # #
 		self.metrics["prediction"] = x_p
+
+		self.merged_summary = tf.summary.merge_all()
+
 
 	def acquire_latent_state(self, x, u):
 
@@ -533,7 +570,7 @@ class DKF(object):
 			)
 
 	def run_epoch(self, session, reader, validate=True, verbose=False):
-
+		np.set_printoptions(threshold='nan')
 		epoch_metrics = {}
 		fetches = {
 			"loss": self.metrics["loss"]
@@ -545,17 +582,22 @@ class DKF(object):
 		# fetches["grads"] = self.grads
 		fetches["train_op"] = self.train_op
 
+		# for var in self.variable_print:
+		# 	fetches[var.name] = var
+
 		i = 0
 		# use batch iterator here
 		# batch = {
 		# 	"x" : np.random.randn( self.config["batch_size"], self.config["max_time_steps"], self.config["x_size"] ), 
 		# 	"u" : np.random.randn( self.config["batch_size"], self.config["max_time_steps"], self.config["u_size"] )
 		# }
+		# train_writer = tf.summary.FileWriter(self.config['logfolder'] + '/train',
+        #                                     session.graph)
 		reader.start()
 
 		batch = reader.next()
 
-		while batch != None and i < 1:
+		while batch != None:
 
 			feed_dict = {}
 			feed_dict[self.x.name] = batch["outputs"]
@@ -564,10 +606,14 @@ class DKF(object):
 			print(fetches)
 
 			vals = session.run(fetches, feed_dict)
-
+			
 			i += 1
 			if verbose:
 				import pprint
+				# for var in self.variable_print:
+				# 	print(var.name + " : ")
+				# 	print(vals[var.name])
+				
 				# pprint.PrettyPrinter().pprint(
 				print(
 					"% Iter Done :", round(i, 0),

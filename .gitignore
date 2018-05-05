@@ -121,3 +121,7 @@ data/*.pyc
 
 # Script 
 typescript
+
+# log files
+log/
+log*
