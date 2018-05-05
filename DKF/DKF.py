@@ -184,6 +184,7 @@ class DKF(object):
 		
 		state = rnn_initial_state
 		with tf.variable_scope("recognition_model/rnn"):
+
 			outputs = []
 			for time_step in range(time_len):
 				if time_step > 0:
@@ -252,17 +253,15 @@ class DKF(object):
 		return mean, cov1
 
 	@staticmethod
-	def get_mvg(mean, covariance):
+	def get_mvg(mean, covariance, stri=None):
 
 		dims = [int(x) for x in covariance.shape]
 		dimt = 1
 		for i in dims:
 			dimt *= i
 		
-		# eq = tf.equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))
-			
-		# covariance = tf.Print(
-			# covariance, ["cov", eq[2, :, :], covariance[2,:,:], tf.shape(covariance)], summarize=dimt)
+		covariance = tf.Print(
+			covariance, ["Covariance" + str(stri), covariance])
 		
 		# with tf.control_dependencies([tf.assert_equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))]):
 
@@ -475,8 +474,8 @@ class DKF(object):
 		# batch size 
 		error_term3 = tf.reduce_sum( out_e3, axis=[1] )
 
-		self.metrics["loss"] = tf.reduce_mean(-error_term1)
-		# self.metrics["loss"] = tf.reduce_mean(error_term1-error_term2-error_term3)
+		# self.metrics["loss"] = tf.reduce_mean(-error_term1)
+		self.metrics["loss"] = tf.reduce_mean(error_term1-error_term2-error_term3)
 
 		tf.get_variable_scope().reuse_variables()
 
@@ -549,25 +548,31 @@ class DKF(object):
 		return x
 
 	def compute_gradients_and_train_op(self):
-		# tvars = self.tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
+		tvars = self.tvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=self.scope)
 
-		# import pprint
-		# pprint.PrettyPrinter().pprint(tvars)
+		import pprint
+		pprint.PrettyPrinter().pprint(tvars)
 
-		# grads = self.grads = tf.gradients(self.metrics["loss"], tvars)
+		grads = tf.gradients(self.metrics["loss"], tvars)
+
+		# self.grads = grads
 		# # import ipdb; ipdb.set_trace()	
-		# optimizer = tf.train.AdamOptimizer(learning_rate=self.config["learning_rate"])
-		# self.train_op=optimizer.apply_gradients(
-		# 	zip(grads, tvars),
-		# 	global_step=self.global_step)
+		optimizer = tf.train.AdamOptimizer(learning_rate=self.config["learning_rate"])
+		self.train_op=optimizer.apply_gradients(
+			zip(grads, tvars),
+			global_step=self.global_step)
 
-		optimizer = tf.train.AdamOptimizer(
-				learning_rate=self.config["learning_rate"]
-			)
-		self.train_op = optimizer.minimize(
-				loss=self.metrics["loss"],
-				global_step=self.global_step
-			)
+		self.grads = grads
+		self.grads[0] = tf.Print(grads[0], ["Grads"])
+		self.grads[0] = tf.Print(grads[0], grads)
+
+		# optimizer = tf.train.AdamOptimizer(
+		# 		learning_rate=self.config["learning_rate"]
+		# 	)
+		# self.train_op = optimizer.minimize(
+		# 		loss=self.metrics["loss"],
+		# 		global_step=self.global_step
+		# 	)
 
 	def run_epoch(self, session, reader, validate=True, verbose=False):
 		np.set_printoptions(threshold='nan')
@@ -581,6 +586,7 @@ class DKF(object):
 		# fetches["vars"] = self.tvars
 		# fetches["grads"] = self.grads
 		fetches["train_op"] = self.train_op
+		fetches["grads"] = self.grads
 
 		# for var in self.variable_print:
 		# 	fetches[var.name] = var
@@ -602,8 +608,6 @@ class DKF(object):
 			feed_dict = {}
 			feed_dict[self.x.name] = batch["outputs"]
 			feed_dict[self.u.name] = batch["inputs"]
-
-			print(fetches)
 
 			vals = session.run(fetches, feed_dict)
 			
