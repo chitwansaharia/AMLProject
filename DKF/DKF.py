@@ -283,8 +283,7 @@ class DKF(object):
 		for i in dims:
 			dimt *= i
 		
-		covariance = tf.Print(
-			covariance, ["Covariance " + str(stri), covariance])
+		# covariance = tf.Print( covariance, ["Covariance " + str(stri), covariance])
 		
 		# with tf.control_dependencies([tf.assert_equal(covariance, tf.transpose(covariance, perm=(0, 2, 1)))]):
 
@@ -403,7 +402,7 @@ class DKF(object):
 		# diverg = tf.distributions.kl_divergence(mvg1, mvg2)
 		diverg = self.kl_divergence(mvg1, mvg2)
 
-		diverg = tf.Print(diverg, ["KL", diverg])
+		# diverg = tf.Print(diverg, ["KL", diverg])
 		return diverg
 
 	def custom_kl_e2(self, mean1, covar1, mean2, covar2, batch_size):
@@ -704,12 +703,17 @@ class DKF(object):
 		optimizer = tf.train.AdamOptimizer(
 				learning_rate=self.config["learning_rate"]
 			)
-		self.train_op = optimizer.minimize(
-				loss=self.metrics["loss"],
-				global_step=self.global_step
-			)
-		self.check_op = tf.add_check_numerics_ops()
 
+		grads = optimizer.compute_gradients(self.metrics["loss"])
+		capped_grads = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in grads]
+
+		self.train_op = optimizer.apply_gradients(capped_grads, global_step=self.global_step)
+
+		# self.train_op = optimizer.minimize(
+				# loss=self.metrics["loss"],
+				# global_step=self.global_step
+			# )
+		self.check_op = tf.add_check_numerics_ops()
 
 	def run_epoch(self, session, reader, validate=True, verbose=False):
 		np.set_printoptions(threshold='nan')
@@ -724,7 +728,7 @@ class DKF(object):
 
 		# for var in self.variable_print:
 			# fetches[var.name] = var
-		# fetches["grads"] = self.grads
+		fetches["grads"] = self.grads
 		# fetches["grads1"] = self.grads1
 		if not validate:
 			fetches["train_op"] = self.train_op
@@ -753,9 +757,12 @@ class DKF(object):
 					"% Iter Done :", round(i, 0),
 					"loss :", round(vals["loss"]),
 				)
-				# print(vals["grads"])
+
+				from scipy import stats
+
+				# print(stats.describe(vals["grads"]))
 				# print(vals["grads1"])
-				# print ("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
+				print ("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
 				# print ("Grads")
 				# print("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
 				# # print (vals['grads'])
