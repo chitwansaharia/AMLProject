@@ -7,7 +7,7 @@ import tensorflow as tf
 
 import pdb
 
-SEED = 100
+SEED = 0
 
 tf.set_random_seed(SEED)
 np.random.seed(SEED)
@@ -218,9 +218,8 @@ class DKF(object):
 
 
 		cells = tf.contrib.rnn.MultiRNNCell([rnn_cell() for _ in range(self.config["num_hidden_layers"])])
-		self.initial_rnn = cells.zero_state(batch_len, dtype=tf.float32)
+		state = self.initial_rnn = cells.zero_state(batch_len, dtype=tf.float32)
 
-		state = self.initial_rnn
 		with tf.variable_scope("recognition_model/rnn"):
 
 			outputs = []
@@ -230,7 +229,7 @@ class DKF(object):
 				cell_output,state = cells(input_concat[:,time_step,:], state)
 				outputs.append(cell_output)
 
-		self.metrics["final_rnn_state"] = outputs[-1]
+			self.metrics["final_rnn_state"] = state
 
 		# batch size x time steps x output dim (num_hidden_units)
 		outputs=tf.stack(outputs, axis=1)
@@ -495,9 +494,6 @@ class DKF(object):
 		# input_size = config.input_size
 		# num_hidden_layers = config.num_hidden_layers
 
-		z1_prior_mean = self.initial_latent_mean
-		z1_prior_covar = self.initial_latent_covar
-
 		batch_size = self.config["batch_size"]
 		time_len = self.config["time_len"]
 
@@ -506,6 +502,13 @@ class DKF(object):
 
 		n_samples_term_1 = self.config["n_samples_term_1"]
 		n_samples_term_3 = self.config["n_samples_term_3"]
+
+		# create identity and broadcast
+		self.batch_cov_identity = tf.eye(z_size, batch_shape=[batch_size])
+
+
+		z1_prior_mean = self.initial_latent_mean
+		z1_prior_covar = self.initial_latent_covar
 
 		# build embeddings
 		self.create_embeddings()
@@ -621,7 +624,7 @@ class DKF(object):
 		error_term3 = tf.reduce_sum( out_e3, axis=[1] )
 
 		# self.metrics["loss"] = tf.reduce_mean(error_term3)
-		self.metrics["loss"] = tf.reduce_mean(error_term1-error_term2-error_term3)
+		self.metrics["loss"] = -tf.reduce_mean(error_term1-error_term2-error_term3)
 
 		tf.get_variable_scope().reuse_variables()
 
@@ -739,7 +742,7 @@ class DKF(object):
 		batch = reader.next()
 		feed_initial_rnn = session.run(self.initial_rnn)
 		feed_initial_latent_mean = np.zeros((self.config["batch_size"], self.config["z_size"]))
-		feed_initial_latent_covar = np.zeros((self.config["batch_size"], self.config["z_size"], self.config["z_size"]))
+		feed_initial_latent_covar = session.run(self.batch_cov_identity)
 
 		while batch != None:
 
@@ -747,9 +750,10 @@ class DKF(object):
 			feed_dict[self.u.name] = batch["inputs"]
 			feed_dict[self.x.name] = batch["outputs"]
 			feed_dict[self.mask.name] = batch["mask"]
-			feed_dict[self.initial_rnn] = feed_initial_rnn
 			feed_dict[self.initial_latent_mean.name] = feed_initial_latent_mean
 			feed_dict[self.initial_latent_covar.name] = feed_initial_latent_covar
+
+			feed_dict[self.initial_rnn] = feed_initial_rnn
 
 			vals = session.run(fetches, feed_dict)
 
@@ -764,7 +768,7 @@ class DKF(object):
 			if batch["refresh"] == 1:
 				feed_initial_rnn = session.run(self.initial_rnn)
 				feed_initial_latent_mean = np.zeros((self.config["batch_size"], self.config["z_size"]))
-				feed_initial_latent_covar = np.zeros((self.config["batch_size"], self.config["z_size"], self.config["z_size"]))
+				feed_initial_latent_covar = session.run(self.batch_cov_identity)
 			else:
 				feed_initial_rnn = vals["final_rnn_state"]
 				feed_initial_latent_mean = vals["final_latent_mean"]
@@ -802,7 +806,7 @@ class DKF(object):
 		batch = reader.next()
 		feed_initial_rnn = session.run(self.initial_rnn)
 		feed_initial_latent_mean = np.zeros((self.config["batch_size"], self.config["z_size"]))
-		feed_initial_latent_covar = np.zeros((self.config["batch_size"], self.config["z_size"], self.config["z_size"]))
+		feed_initial_latent_covar = session.run(self.batch_cov_identity)
 
 		while batch != None:
 
@@ -819,7 +823,7 @@ class DKF(object):
 			if batch["refresh"] == 1:
 				feed_initial_rnn = session.run(self.initial_rnn)
 				feed_initial_latent_mean = np.zeros((self.config["batch_size"], self.config["z_size"]))
-				feed_initial_latent_covar = np.zeros((self.config["batch_size"], self.config["z_size"], self.config["z_size"]))
+				feed_initial_latent_covar = session.run(self.batch_cov_identity)
 			else:
 				feed_initial_rnn = vals["final_rnn_state"]
 				feed_initial_latent_mean = vals["final_latent_mean"]
