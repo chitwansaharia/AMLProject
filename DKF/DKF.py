@@ -791,12 +791,6 @@ class DKF(object):
 			"final_latent_mean" : self.metrics["final_latent_mean"],
 			"final_latent_covar" : self.metrics["final_latent_covar"]
 		}
-		################################################
-		import pandas as pd
-		train = pd.read_csv('data/train.csv')
-		mean = train['Sales'].mean()
-		std = train['Sales'].std()
-		################################################
 		reader.start()
 
 		# for rms calculation
@@ -820,6 +814,7 @@ class DKF(object):
 
 			vals = session.run(fetches, feed_dict)
 
+
 			if batch["refresh"] == 1:
 				feed_initial_rnn = session.run(self.initial_rnn)
 				feed_initial_latent_mean = np.zeros((self.config["batch_size"], self.config["z_size"]))
@@ -830,16 +825,19 @@ class DKF(object):
 				feed_initial_latent_covar = vals["final_latent_covar"]
 
 
+			# print("OUTPUTS store 1:", vals["outputs"])
+
 			reshape_outputs = np.reshape(vals["outputs"],[self.config["batch_size"],self.config["time_len"],-1])
 
 			for i in range(self.config["batch_size"]):
 				for j in range(self.config["time_len"]):
 					if batch['mask'][i][j] == 1.0:
-						if batch["outputs"][i][j][0]*std+mean > 1:
-							final_val += ((reshape_outputs[i][j][0]*std - batch["outputs"][i][j][0]*std)/(batch["outputs"][i][j][0]*std+mean))**2
+						if batch["outputs"][i][j][0]*self.std+self.mean > 1:
+							final_val += ((reshape_outputs[i][j][0]*self.std - batch["outputs"][i][j][0]*self.std)/(batch["outputs"][i][j][0]*self.std+self.mean))**2
 							final_count += 1
 
 			batch = reader.next()
+
 
 		return np.sqrt(final_val/final_count)
 

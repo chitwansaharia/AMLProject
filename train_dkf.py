@@ -84,7 +84,7 @@ def main(_):
                     save_path=os.path.join(save_path, "best_model_dkf.ckpt"))
 
             i, patience = 0, 0
-            best_valid_metric = 1e10
+            best_valid_metric = 1e16
 
                 
             while patience < model_config.patience:
@@ -98,6 +98,8 @@ def main(_):
 
                 print("Evaluating")
                 valid_rms = model.run_test(session, reader=iterator_valid)
+
+                print("RMS: ", valid_rms)
 
                 if valid_rms < best_valid_metric:
                     best_valid_metric = valid_rms

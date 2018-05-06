@@ -37,7 +37,7 @@ def base_model_config():
     config.keep_prob = 0.7
     config.batch_size = 25
     config.load_mode = "fresh"
-    config.patience = 3
+    config.patience = 9
     config.output_size = 1
     config.forced_size = 5
     return config
@@ -57,7 +57,7 @@ def dkf_model_config():
     config.input_size = 17
     config.output_size = 1
 
-    config.learning_rate = 0.00003
+    config.learning_rate = 0.0000003
     config.keep_prob = 0.7
 
     config.num_hidden_units = 200    
