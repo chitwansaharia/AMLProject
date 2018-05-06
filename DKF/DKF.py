@@ -74,6 +74,7 @@ class DKF(object):
 
 		input_size = self.config["u_size"]
 		output_size = self.config["x_size"]
+		hidden_size = self.config["z_size"]
 
 		# batch size x time steps x input feature
 		self.x = tf.placeholder(dtype=tf.float32,
@@ -86,6 +87,22 @@ class DKF(object):
 				 shape=(batch_size,
 				 time_len,
 				 input_size)
+				 )
+		# # batch size x time steps
+		self.mask = tf.placeholder(dtype=tf.float32,
+				 shape=(batch_size,
+				 time_len)
+				 )
+
+		# # batch size x z_size
+		self.initial_latent_mean = tf.placeholder(dtype=tf.float32,
+				 shape=(batch_size,
+				 hidden_size)
+				 )
+		self.initial_latent_covar = tf.placeholder(dtype=tf.float32,
+				 shape=(batch_size,
+				 hidden_size,
+				 hidden_size)
 				 )
 
 	def create_embeddings(self):
@@ -201,9 +218,9 @@ class DKF(object):
 
 
 		cells = tf.contrib.rnn.MultiRNNCell([rnn_cell() for _ in range(self.config["num_hidden_layers"])])
-		rnn_initial_state = cells.zero_state(batch_len, dtype=tf.float32)
-		
-		state = rnn_initial_state
+		self.initial_rnn = cells.zero_state(batch_len, dtype=tf.float32)
+
+		state = self.initial_rnn
 		with tf.variable_scope("recognition_model/rnn"):
 
 			outputs = []
@@ -212,6 +229,8 @@ class DKF(object):
 					tf.get_variable_scope().reuse_variables()
 				cell_output,state = cells(input_concat[:,time_step,:], state)
 				outputs.append(cell_output)
+
+		self.metrics["final_rnn_state"] = outputs[-1]
 
 		# batch size x time steps x output dim (num_hidden_units)
 		outputs=tf.stack(outputs, axis=1)
@@ -304,9 +323,7 @@ class DKF(object):
 				loc=mean,
 				scale_diag=covariance
 				# validate_args=True,
-			)
-
-	
+			)	
 		
 	def pdf_value_multivariate_custom(self, mean, covariance, arg):
 
@@ -471,7 +488,6 @@ class DKF(object):
 
 		return prob_values
 
-
 	def build_model(self):
 		# config = self.config
 		# batch_size = config.batch_size
@@ -479,8 +495,8 @@ class DKF(object):
 		# input_size = config.input_size
 		# num_hidden_layers = config.num_hidden_layers
 
-		z1_prior_mean = self.config["z1_prior_mean"]
-		z1_prior_covar = self.config["z1_prior_covar"]
+		z1_prior_mean = self.initial_latent_mean
+		z1_prior_covar = self.initial_latent_covar
 
 		batch_size = self.config["batch_size"]
 		time_len = self.config["time_len"]
@@ -500,6 +516,8 @@ class DKF(object):
 		# batch size x time steps x z_distr_params_size ((mean, log of variance))
 		z_param_mean, z_param_covar = self.recognition_model(self.x, embed_u)
 
+		self.metrics["final_latent_mean"] = tf.reshape(z_param_mean[:, -1, :], shape=(batch_size, z_size))
+		self.metrics["final_latent_covar"] = tf.reshape(z_param_covar[:, -1, :, :], shape=(batch_size, z_size, z_size))
 
 		# reshaping into batch size * timesteps x z_distr_params_size for generality
 		z_param_mean_shaped = tf.reshape( z_param_mean, shape=(-1, z_size) )
@@ -543,7 +561,7 @@ class DKF(object):
 
 		expectation_out1 = tf.reduce_mean(out1, axis=[1])
 		# batch size 
-		error_term1 = tf.reduce_sum(tf.reshape( expectation_out1, shape=(-1, time_len) ), axis=[1])
+		error_term1 = tf.reduce_sum( tf.multiply(self.mask, tf.reshape( expectation_out1, shape=(-1, time_len) )), axis=[1])
 
 		# batch size * 1 (t = 0) x 2 (mean, log variance)
 		z_param_mean_0, z_param_covar_0 = z_param_mean[:,0,:], z_param_covar[:,0,:,:]
@@ -595,7 +613,7 @@ class DKF(object):
 
 		# self.variable_print_append(kl_samples_e3)
 
-		out_e3 = tf.reduce_mean( kl_samples_e3, axis=[2] )
+		out_e3 = tf.multiply( self.mask[:, :-1], tf.reduce_mean( kl_samples_e3, axis=[2] ))
 
 		# self.variable_print_append(out_e3)
 
@@ -608,38 +626,22 @@ class DKF(object):
 		tf.get_variable_scope().reuse_variables()
 
 		# # #
-		lsm_time = self.config["lsm_time"]
 
-		x_curr = self.x[:, :lsm_time, :]
-		u_e_curr = embed_u[:, :lsm_time, :]
-		ls = self.acquire_latent_state(x_curr, u_e_curr)
+		u_e_curr = embed_u
+		ls = self.acquire_latent_state()
 
-		u_e_r = embed_u[:, lsm_time:, :]
-		x_p = self.predict_x(ls, u_e_r)
-		x_r = self.x[:, lsm_time:, :]
-
-
-			# self.metrics["prediction_error"] = tf.reduce_sum( tf.reduce_mean( tf.square(  tf.divide( x_r - x_p, x_r )), axis = 1 ) , axis=0)
-
-		# # #
+		x_p = self.predict_x(ls, u_e_curr)
 		self.metrics["prediction"] = x_p
 
 		self.merged_summary = tf.summary.merge_all()
 
-
-	def acquire_latent_state(self, x, u):
+	def acquire_latent_state(self):
 
 		# as input
-		# batch size x time_steps x x_size
-		# batch size x time_steps x u_size
-		# batch size x time_steps x mean, var
+		# sample from prior meam, covariance
 
 		z_size = self.config["z_size"]
-
-		distr_z_mean, distr_z_covar = self.recognition_model(x, u)
-
-		# consider last output and reshape
-		distr_z_mean, distr_z_covar = tf.reshape(distr_z_mean[:,-1,:], shape=(-1, z_size)), tf.reshape(distr_z_covar[:,-1,:,:], shape=(-1, z_size, z_size))
+		distr_z_mean, distr_z_covar = self.initial_latent_mean, self.initial_latent_covar
 
 		# batch size x z_size reshaped
 		return tf.reshape(self.custom_gaussian_sampler( distr_z_mean, distr_z_covar, 1), shape=(-1, z_size))
@@ -716,113 +718,124 @@ class DKF(object):
 			# )
 		self.check_op = tf.add_check_numerics_ops()
 
-	def run_epoch(self, session, reader, validate=True, verbose=False):
+	def run_epoch(self, session, reader, verbose=False):
+
 		np.set_printoptions(threshold='nan')
+
 		epoch_metrics = {}
 		fetches = {
-			"loss": self.metrics["loss"]
+			"loss": self.metrics["loss"],
+			"train_op" : self.train_op,
+			"final_rnn_state" : self.metrics["final_rnn_state"],
+			"final_latent_mean" : self.metrics["final_latent_mean"],
+			"final_latent_covar" : self.metrics["final_latent_covar"]
 		}
 
-		if verbose:
-			print("\nTraining...")
-		
+		print("\nTraining...")
 
-		# for var in self.variable_print:
-			# fetches[var.name] = var
-		fetches["grads"] = self.grads
-		# fetches["grads1"] = self.grads1
-		if not validate:
-			fetches["train_op"] = self.train_op
-			# fetches["check_op"] =  self.check_op
-			# fetches["weights"] = self.tvars
-		else:
-			fetches["prediction"] = self.metrics["prediction"]
-		# fetches["grads"] = self.grads
 		i = 0
 		reader.start()
+
 		batch = reader.next()
+		feed_initial_rnn = session.run(self.initial_rnn)
+		feed_initial_latent_mean = np.zeros((self.config["batch_size"], self.config["z_size"]))
+		feed_initial_latent_covar = np.zeros((self.config["batch_size"], self.config["z_size"], self.config["z_size"]))
 
 		while batch != None:
 
 			feed_dict = {}
-			feed_dict[self.x.name] = batch["outputs"]
 			feed_dict[self.u.name] = batch["inputs"]
+			feed_dict[self.x.name] = batch["outputs"]
+			feed_dict[self.mask.name] = batch["mask"]
+			feed_dict[self.initial_rnn] = feed_initial_rnn
+			feed_dict[self.initial_latent_mean.name] = feed_initial_latent_mean
+			feed_dict[self.initial_latent_covar.name] = feed_initial_latent_covar
 
 			vals = session.run(fetches, feed_dict)
-			
 
-
-			i += 1
 			if verbose:
 				print(
 					"% Iter Done :", round(i, 0),
 					"loss :", round(vals["loss"]),
 				)
 
-				# print(vals["grads1"])
 				print ("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
-				# print ("Grads")
-				# print("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
-				# # print (vals['grads'])
 
-				# print("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
-				# print("Weights")
-				# print("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
-				# # print(vals['weights'])
-				# print("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
-				# print("Variables")
-				# print("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
-					# for var in self.variable_print:
-					# print("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
-					# print(var.name)
-					# print("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
-					# print(vals[var.name])
-					
+			if batch["refresh"] == 1:
+				feed_initial_rnn = session.run(self.initial_rnn)
+				feed_initial_latent_mean = np.zeros((self.config["batch_size"], self.config["z_size"]))
+				feed_initial_latent_covar = np.zeros((self.config["batch_size"], self.config["z_size"], self.config["z_size"]))
+			else:
+				feed_initial_rnn = vals["final_rnn_state"]
+				feed_initial_latent_mean = vals["final_latent_mean"]
+				feed_initial_latent_covar = vals["final_latent_covar"]
+
+			i += 1
+			batch = reader.next()
+
+		epoch_metrics["loss"] = vals["loss"]
+
+		return epoch_metrics
+
+	def run_test(self, session, reader, calc_error=False, verbose=False):
+
+		print("\nPredicting...")
+
+		fetches = {
+			"outputs" : self.metrics["prediction"],
+			"final_rnn_state" : self.metrics["final_rnn_state"],
+			"final_latent_mean" : self.metrics["final_latent_mean"],
+			"final_latent_covar" : self.metrics["final_latent_covar"]
+		}
+		################################################
+		import pandas as pd
+		train = pd.read_csv('data/train.csv')
+		mean = train['Sales'].mean()
+		std = train['Sales'].std()
+		################################################
+		reader.start()
+
+		# for rms calculation
+		final_val,final_count = 0.0,0.0
+
+		# load from test set
+		batch = reader.next()
+		feed_initial_rnn = session.run(self.initial_rnn)
+		feed_initial_latent_mean = np.zeros((self.config["batch_size"], self.config["z_size"]))
+		feed_initial_latent_covar = np.zeros((self.config["batch_size"], self.config["z_size"], self.config["z_size"]))
+
+		while batch != None:
+
+			feed_dict = {}
+			feed_dict[self.u.name] = batch["inputs"]
+			feed_dict[self.x.name] = batch["outputs"]
+			feed_dict[self.mask.name] = batch["mask"]
+			feed_dict[self.initial_rnn] = feed_initial_rnn
+			feed_dict[self.initial_latent_mean.name] = feed_initial_latent_mean
+			feed_dict[self.initial_latent_covar.name] = feed_initial_latent_covar
+
+			vals = session.run(fetches, feed_dict)
+
+			if batch["refresh"] == 1:
+				feed_initial_rnn = session.run(self.initial_rnn)
+				feed_initial_latent_mean = np.zeros((self.config["batch_size"], self.config["z_size"]))
+				feed_initial_latent_covar = np.zeros((self.config["batch_size"], self.config["z_size"], self.config["z_size"]))
+			else:
+				feed_initial_rnn = vals["final_rnn_state"]
+				feed_initial_latent_mean = vals["final_latent_mean"]
+				feed_initial_latent_covar = vals["final_latent_covar"]
+
+
+			reshape_outputs = np.reshape(vals["outputs"],[self.config["batch_size"],self.config["time_len"],-1])
+
+			for i in range(self.config["batch_size"]):
+				for j in range(self.config["time_len"]):
+					if batch['mask'][i][j] == 1.0:
+						if batch["outputs"][i][j][0]*std+mean > 1:
+							final_val += ((reshape_outputs[i][j][0]*std - batch["outputs"][i][j][0]*std)/(batch["outputs"][i][j][0]*std+mean))**2
+							final_count += 1
 
 			batch = reader.next()
 
-		# if validate:
-		# 	if verbose:
-		# 		print("\nValidating...")
-		# 	x_pred = vals["prediction"]
+		return np.sqrt(final_val/final_count)
 
-		# 	reshape_outputs = np.reshape(x_pred ,[self.config["batch_size"], self.config["time_len"],-1])
-		# 	for i in range(self.config["batch_size"]):
-		# 		for j in range(self.config["time_len"]):
-		# 			if batch['mask'][i][j] == 1.0:
-		# 				if batch["outputs"][i][j][0] * self.std + self.mean > 1:
-		# 					final_val += ((reshape_outputs[i][j][0] * self.std - batch["outputs"]
-        #                                                     [i][j][0] * self.std) / (batch["outputs"][i][j][0] * self.std + self.mean))**2
-		# 					final_count += 1
-
-		# 	vals = session.run(fetches, feed_dict)
-
-		epoch_metrics["loss"] = vals["loss"]
-		# epoch_metrics["validation_error"] = vals["prediction_error"]
-		return epoch_metrics
-
-
-	def run_test(self, session, calc_error=False, verbose=False):
-
-		fetches = {}
-
-		if verbose:
-			print("\nPredicting...")
-		# load from test set
-		batch = {
-			"x": np.random.randn(self.config["batch_size"], self.config["max_time_steps"], self.config["x_size"]),
-			"u": np.random.randn(self.config["batch_size"], self.config["max_time_steps"], self.config["u_size"])
-		}
-		fetches["prediction"] = self.metrics["prediction"]
-
-		if calc_error:
-			fetches["prediction_error"] = self.metrics["prediction_error"]
-
-		feed_dict = {}
-		feed_dict[self.x.name] = batch["x"]
-		feed_dict[self.u.name] = batch["u"]
-
-		vals = session.run(fetches, feed_dict)
-
-		if calc_error:
-			print("prediction_error: %f" % vals["prediction_error"])

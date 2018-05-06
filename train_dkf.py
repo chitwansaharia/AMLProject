@@ -47,9 +47,6 @@ def main(_):
         "num_hidden_units" : model_config.num_hidden_units,
         "keep_prob" : model_config.keep_prob,
     
-        "z1_prior_mean" : tf.zeros(shape=(model_config.latent_state_size)),
-        "z1_prior_covar" : tf.eye(model_config.latent_state_size),
-
         "n_samples_term_1" : model_config.nsamples_e1,
         "n_samples_term_3" : model_config.nsamples_e3,
         "lsm_time" : model_config.lsm_time,
@@ -94,19 +91,19 @@ def main(_):
                 i += 1
 
                 iterator_train = data_iter.SSIterator(model_config, mode = "train")
-                iterator_valid = data_iter.SSIterator(model_config, mode = "valid")
+                iterator_valid = data_iter.SSIterator(model_config, mode="valid")
 
-                
                 print("\nEpoch: %d" % (i))
-                model.run_epoch(session, reader=iterator_train, validate=False, verbose=True)
+                model.run_epoch(session, reader=iterator_train, verbose=True)
 
-                valid_loss = model.run_epoch(session, reader=iterator_valid, validate=True, verbose=True)
+                print("Evaluating")
+                valid_rms = model.run_test(session, reader=iterator_valid)
 
-                if valid_loss < best_valid_metric:
-                    best_valid_metric = valid_loss
+                if valid_rms < best_valid_metric:
+                    best_valid_metric = valid_rms
 
                     print("\nsaving best model...")
-                    best_saver.save(sess=session, save_path=os.path.join(save_path, "best_model.ckpt"))
+                    best_saver.save(sess=session, save_path=os.path.join(save_path, "best_model_dkf.ckpt"))
                     patience = 0
                 else:
                     patience += 1
