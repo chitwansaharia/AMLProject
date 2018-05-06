@@ -48,8 +48,8 @@ def dkf_model_config():
     config.batch_size = 20
     config.max_time_steps = 20
 
-    config.nsamples_e1 = 50
-    config.nsamples_e3 = 50
+    config.nsamples_e1 = 20
+    config.nsamples_e3 = 20
     config.lsm_time = 10
 
     config.latent_state_size = 10
@@ -57,11 +57,13 @@ def dkf_model_config():
     config.input_size = 17
     config.output_size = 1
 
-    config.learning_rate = 0.000001
+    config.learning_rate = 0.00003
     config.keep_prob = 0.7
 
     config.num_hidden_units = 200    
-    config.num_hidden_layers = 4
+    config.num_hidden_layers = 3
+
+    config.max_grad_norm = 1000
 
     config.logfolder = "log/"
     

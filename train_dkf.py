@@ -55,7 +55,8 @@ def main(_):
         "lsm_time" : model_config.lsm_time,
 
         "learning_rate" : model_config.learning_rate,
-        "logfolder": model_config.logfolder
+        "logfolder": model_config.logfolder,
+        "max_grad_norm": model_config.max_grad_norm,
     }
 
     save_path = os.path.join(FLAGS.save_path)

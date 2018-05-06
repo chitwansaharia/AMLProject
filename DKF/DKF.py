@@ -603,7 +603,7 @@ class DKF(object):
 		error_term3 = tf.reduce_sum( out_e3, axis=[1] )
 
 		# self.metrics["loss"] = tf.reduce_mean(error_term3)
-		self.metrics["loss"] = -tf.reduce_mean(error_term1-error_term2-error_term3)
+		self.metrics["loss"] = tf.reduce_mean(error_term1-error_term2-error_term3)
 
 		tf.get_variable_scope().reuse_variables()
 
@@ -682,7 +682,7 @@ class DKF(object):
 		# import pprint
 		# pprint.PrettyPrinter().pprint(tvars)
 
-		self.grads = tf.gradients(self.metrics["loss"], self.competition_open_since_month_embedding)
+		self.grads = tf.gradients(self.metrics["loss"], self.tvars)
 		# self.grads1 = tf.gradients(self.metrics["loss"], self.comp_dist_bias)
 		# self.variable_print_append(grads)
 		# self.variable_print_append(grads1)
@@ -704,10 +704,11 @@ class DKF(object):
 				learning_rate=self.config["learning_rate"]
 			)
 
-		grads = optimizer.compute_gradients(self.metrics["loss"])
-		capped_grads = [(tf.clip_by_value(grad, -5., 5.), var) for grad, var in grads]
+		# grads = optimizer.compute_gradients(self.metrics["loss"])
+		# capped_grads = [(tf.clip_by_value(grad, -self.config['max_grad_norm'], self.config['max_grad_norm']), var) for grad, var in grads]
 
-		self.train_op = optimizer.apply_gradients(capped_grads, global_step=self.global_step)
+		capped_grads, _ = tf.clip_by_global_norm(self.grads, self.config['max_grad_norm'])
+		self.train_op = optimizer.apply_gradients(zip(capped_grads, tvars), global_step=self.global_step)
 
 		# self.train_op = optimizer.minimize(
 				# loss=self.metrics["loss"],
@@ -758,9 +759,6 @@ class DKF(object):
 					"loss :", round(vals["loss"]),
 				)
 
-				from scipy import stats
-
-				# print(stats.describe(vals["grads"]))
 				# print(vals["grads1"])
 				print ("<~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~>")
 				# print ("Grads")
