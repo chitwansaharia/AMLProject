@@ -93,23 +93,23 @@ def main(_):
                 i += 1
 
                 iterator_train = data_iter.SSIterator(model_config, mode = "train")
-                # iterator_valid = data_iter.SSIterator(model_config, mode = "valid")
+                iterator_valid = data_iter.SSIterator(model_config, mode = "valid")
 
                 
                 print("\nEpoch: %d" % (i))
                 model.run_epoch(session, reader=iterator_train, validate=False, verbose=True)
 
-                # valid_loss = model.run_epoch(session, reader=iterator_valid, validate=True verbose=True)
+                valid_loss = model.run_epoch(session, reader=iterator_valid, validate=True, verbose=True)
 
-                # if valid_loss < best_valid_metric:
-                #     best_valid_metric = valid_loss
+                if valid_loss < best_valid_metric:
+                    best_valid_metric = valid_loss
 
-                #     print("\nsaving best model...")
-                #     best_saver.save(sess=session, save_path=os.path.join(save_path, "best_model.ckpt"))
-                #     patience = 0
-                # else:
-                #     patience += 1
-                #     print("\nLosing patience...")
+                    print("\nsaving best model...")
+                    best_saver.save(sess=session, save_path=os.path.join(save_path, "best_model.ckpt"))
+                    patience = 0
+                else:
+                    patience += 1
+                    print("\nLosing patience...")
 
 if __name__ == "__main__":
     tf.app.run()
